@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,12 +31,15 @@ var loadDuration = flag.Duration("kafka-load-duration", 5*time.Second, "request 
 var loadMaxInFlight = flag.Int("kafka-max-in-flight", 512, "per-client in-flight limit in TestKafkaLoadCurve")
 var loadCoreConcurrency = flag.Int("kafka-core-concurrency", 128, "core Server MaxConcurrent in TestKafkaLoadCurve")
 var loadPublishBuffers = flag.Int("kafka-publish-buffers", 256, "per-transport Kafka producer record buffer")
+var loadMixed = flag.Bool("kafka-load-mixed", false, "exercise two replicas each of Orders and Inventory with four methods")
+var loadTrials = flag.Int("kafka-load-trials", 3, "number of measured rounds per concurrency level")
+
 var loadResourceMetrics = flag.Bool("kafka-load-resources", false, "include Linux cgroup v2 measurements per round")
 
 // TestKafkaLoadCurve measures closed-loop load after transport startup and warmup.
 func TestKafkaLoadCurve(t *testing.T) {
-	if *loadPublishWorkers < 1 || *loadDuration <= 0 {
-		t.Fatal("kafka-publish-workers and kafka-load-duration must be positive")
+	if *loadPublishWorkers < 1 || *loadDuration <= 0 || *loadTrials < 1 {
+		t.Fatal("publish workers, duration and trials must be positive")
 	}
 	if *loadServerWorkers < 1 || *loadWindow < *loadServerWorkers {
 		t.Fatal("kafka-load-window must be at least the positive kafka-server-workers value")
@@ -73,6 +77,22 @@ func TestKafkaLoadCurve(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { closeTestResource(t, server) })
+	if *loadMixed {
+		for _, service := range []string{"Orders", "Inventory", "Inventory"} {
+			tr := newKafkaTransport(t, serverOpts)
+			var replica *courier.Server
+			if service == "Orders" {
+				replica, err = demo.ListenOrders(context.Background(), tr, &handlers.Orders{}, courier.ServerOptions{MaxConcurrent: *loadCoreConcurrency})
+			} else {
+				replica, err = demo.ListenInventory(context.Background(), tr, &loadInventory{}, courier.ServerOptions{MaxConcurrent: *loadCoreConcurrency})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { closeTestResource(t, replica) })
+		}
+	}
+	var requestSequence atomic.Uint64
 	var clients []*courier.Client
 	for i := 0; i < 3; i++ {
 		c, err := courier.NewClient(context.Background(), newKafkaTransport(t, opts), courier.ClientOptions{MaxInFlight: *loadMaxInFlight, DefaultTimeout: 8 * time.Second, PublishWorkers: *loadPublishWorkers})
@@ -86,12 +106,13 @@ func TestKafkaLoadCurve(t *testing.T) {
 		}
 	}
 	for _, concurrency := range levels {
-		for trial := 1; trial <= 3; trial++ {
+		for trial := 1; trial <= *loadTrials; trial++ {
 			var mu sync.Mutex
 			var wg sync.WaitGroup
 			var latencies []float64
 			failures := 0
 			failureReasons := make(map[string]int)
+			completedMethods := make(map[string]int)
 			var resourcesBefore map[string]uint64
 			if *loadResourceMetrics {
 				var err error
@@ -107,13 +128,43 @@ func TestKafkaLoadCurve(t *testing.T) {
 				go func(worker int) {
 					defer wg.Done()
 					api := demo.NewOrdersAsyncClient(clients[worker%len(clients)])
+					inventory := demo.NewInventoryAsyncClient(clients[worker%len(clients)])
 					for sequence := 0; time.Now().Before(until); sequence++ {
 						id := fmt.Sprintf("%d/%d/%d/%d", concurrency, trial, worker, sequence)
+						if *loadMixed {
+							id = strconv.FormatUint(requestSequence.Add(1), 10)
+						}
 						began := time.Now()
-						result, err := api.Get(context.Background(), id, 0)
+						method := "Orders.Get"
+						valid := false
+						var err error
+						if !*loadMixed || worker%4 == 0 {
+							var result *demo.Item
+							result, err = api.Get(context.Background(), id, 0)
+							valid = result != nil && result.ID == id && result.Source == "Orders"
+						} else {
+							switch worker % 4 {
+							case 1:
+								method = "Orders.List"
+								var result []*demo.Item
+								result, err = api.List(context.Background(), []string{id})
+								valid = len(result) == 1 && result[0] != nil && result[0].ID == id && result[0].Source == "Orders"
+							case 2:
+								method = "Inventory.Reserve"
+								var result *demo.Item
+								result, err = inventory.Reserve(context.Background(), id)
+								valid = result != nil && result.ID == id && result.Source == "Inventory"
+							case 3:
+								method = "Inventory.Count"
+								var result int64
+								result, err = inventory.Count(context.Background(), id)
+								expected, _ := strconv.ParseInt(id, 10, 64)
+								valid = result == expected
+							}
+						}
 						elapsed := float64(time.Since(began).Microseconds()) / 1000
 						mu.Lock()
-						if err != nil || result == nil || result.ID != id || result.Source != "Orders" {
+						if err != nil || !valid {
 							failures++
 							reason := "nil or mismatched response"
 							if err != nil {
@@ -125,6 +176,7 @@ func TestKafkaLoadCurve(t *testing.T) {
 							failureReasons[reason]++
 						} else {
 							latencies = append(latencies, elapsed)
+							completedMethods[method]++
 						}
 						mu.Unlock()
 					}
@@ -139,6 +191,7 @@ func TestKafkaLoadCurve(t *testing.T) {
 			percentile := func(p float64) float64 { return latencies[int(float64(len(latencies)-1)*p)] }
 			metrics := map[string]any{
 				"admission_seconds": loadDuration.Seconds(), "concurrency": concurrency, "trial": trial, "sessions": 3, "publish_workers": *loadPublishWorkers, "server_workers": *loadServerWorkers, "window": *loadWindow, "core_concurrency": *loadCoreConcurrency, "publish_buffers": *loadPublishBuffers, "max_in_flight": *loadMaxInFlight,
+				"mixed_services": *loadMixed, "completed_methods": completedMethods,
 				"successes": len(latencies), "failures": failures, "failure_reasons": failureReasons, "elapsed_seconds": elapsed,
 				"successful_calls_per_second": float64(len(latencies)) / elapsed,
 				"p50_ms":                      percentile(.50), "p95_ms": percentile(.95), "p99_ms": percentile(.99),
@@ -169,4 +222,12 @@ func TestKafkaLoadCurve(t *testing.T) {
 			}
 		}
 	}
+}
+
+// loadInventory echoes the numeric request token so Count responses can be
+// checked for cross-call mixups even when input strings have equal lengths.
+type loadInventory struct{ handlers.Inventory }
+
+func (loadInventory) Count(_ context.Context, id string) (int64, error) {
+	return strconv.ParseInt(id, 10, 64)
 }

@@ -1,6 +1,6 @@
 # 测试与性能
 
-本文区分功能正确性、短时闭环压测和容量模型；曲线展示指定环境中的观测，不是吞吐上限或生产服务等级承诺。
+本文区分功能正确性、短时闭环压测、持续负载验证和容量模型；曲线展示指定环境中的观测，不是吞吐上限或生产服务等级承诺。
 
 ## 测试分层
 
@@ -143,11 +143,47 @@ KAFKA_BROKERS=127.0.0.1:9092 CGO_ENABLED=0 \
 | `-kafka-publish-buffers` | 256 | 每个 transport 的 SDK producer 记录缓冲上限 |
 | `-kafka-max-in-flight` | 512 | 每个 Client 的 MaxInFlight |
 | `-kafka-load-duration` | 5s | 每轮持续发起请求的时间，随后等待在途请求排空 |
+| `-kafka-load-trials` | 3 | 每个并发档位的测量轮数 |
+| `-kafka-load-mixed` | false | 启动 Orders、Inventory 各两个实例，混合调用四个方法 |
 | `-kafka-load-resources` | false | 读取 Linux cgroup v2 的 CPU 与内存计数 |
 
 `-kafka-load-resources` 要求进程处于设置了 CPU quota 的 cgroup v2 容器中；环境不满足时测试失败，不将缺失指标报告为零。每轮 `KAFKA_LOAD` 增加 `cpu_cores`（平均消耗核数）、`cpu_quota_cores`、`cpu_quota_utilization`（消耗核数/配额）、`throttled_periods`（本轮 CPU 配额节流周期数）和 `memory_peak_bytes`（容器自启动以来的峰值，不是本轮独立峰值）。
 
 CPU 计数围绕每轮负载取差值，不包含连接初始化；应用容器同时运行压测调用方、客户端和服务端，因此指标是合计资源。比较 1C2G 与 2C4G 时，应同时调整容器 CPU/内存配额与 GOMAXPROCS，保持 Broker、消息大小和确认策略相同，并区分 CPU 利用率相对一核还是相对全部配额。
+
+### 多服务持续负载
+
+在专用 Kafka 环境、已设置 4 CPU / 1 GiB 配额的 Linux cgroup v2 应用容器内，从仓库根目录运行：
+
+```sh
+KAFKA_BROKERS=kafka:9092 GOMAXPROCS=4 CGO_ENABLED=0 \
+  go test -tags=integration ./examples -run '^TestKafkaLoadCurve$' \
+  -count=1 -v -timeout=15m -args \
+  -kafka-load-mixed -kafka-load-trials=30 -kafka-load-duration=20s \
+  -kafka-load-concurrency=1536 -kafka-publish-workers=512 \
+  -kafka-max-in-flight=4096 -kafka-server-workers=512 \
+  -kafka-load-window=1024 -kafka-core-concurrency=512 \
+  -kafka-publish-buffers=2048 -kafka-load-resources
+```
+
+`kafka:9092` 是测试网络中 Broker 的可达地址；该命令本身不创建 Broker 或设置配额，Broker 应独立运行。实测使用单节点 Kafka 4.4.0、2 CPU / 2 GiB、JVM `-Xms256m -Xmx512m`；生产数据不得用于压测。
+
+混合模式创建三个核心 Client、两个 Orders 实例和两个 Inventory 实例，均在应用进程内运行；每服务三个请求分区，所有客户端共享一个回复分区。四个方法为 Orders.Get、Orders.List、Inventory.Reserve、Inventory.Count，每个并发 worker 固定调用一个方法，完成量不强制等比例。`completed_methods` 记录各方法成功次数。
+
+所有业务请求使用全程递增的唯一数字标记；Get、List、Reserve 逐条校验业务 ID 与服务来源，压测专用 Count handler 回显数字标记，使等长输入也可区分，正常示例的 Count 语义不变；错误、空响应、标记或来源不符都计入失败。每轮结束检查客户端 Pending 为零。30 轮各持续发起 20 秒，轮间仅排空与统计，同一组 Client、服务和 Broker 全程复用，不在每轮重建；它是约 10 分钟持续负载验证，不是 24 小时可靠性承诺或固定到达速率过载试验。
+
+实测数据、曲线及本机资源策略见 [Kafka 容量规划](KAFKA-CAPACITY.md#多服务持续负载与本机资源策略)。
+
+仓库保留逐轮 CSV、资源时间序列及环境摘要，安装 Python 3 与 matplotlib 后可从仓库根目录重绘本次图表：
+
+```sh
+python3 scripts/plot-kafka-soak.py \
+  docs/benchmarks/kafka-soak.csv docs/benchmarks/kafka-soak-memory.csv \
+  --split-summary docs/benchmarks/kafka-split.csv
+```
+
+吞吐、延迟和 CPU 横轴为累计请求发起时间；内存横轴为首次资源采样后的实际时间，包含启动阶段，两种横轴不用于精确事件对齐。每轮 p99 不是全程请求合并后的 p99。
+
 
 ### 分段耗时诊断
 
