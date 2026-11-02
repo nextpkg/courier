@@ -7,7 +7,14 @@ git clone https://github.com/nextpkg/courier.git
 cd courier
 ```
 
-以下示例复用相同的 IDL 和 handler；先准备对应 Broker，再分别启动服务端和客户端。
+以下示例复用相同的 IDL 和 handler；先准备对应 Broker，再分别启动服务端和客户端。客户端调用 `Orders.Get` 和 `Inventory.Count`，所以两个服务都必须启动；所有命令应使用同一检出版本。
+
+两个后端的客户端预期输出相同：
+
+```text
+inventory count: 7
+order: id=order-42 source=Orders
+```
 
 ## NATS
 
@@ -43,6 +50,16 @@ CGO_ENABLED=0 go run ./examples/cmd/kafka-demo -mode client -brokers 127.0.0.1:9
 
 两个服务端终端出现 `server ready` 后再运行客户端；客户端完成后退出，服务端用 `Ctrl+C` 停止，Broker 由其运维方式管理。
 
+示例默认前缀为 `courier.demo`，provision 后留下 `courier.demo.request.Orders`、`courier.demo.request.Inventory` 和 `courier.demo.replies` 三个 topic；停止示例不会删除它们。需要隔离另一组演示时，为四条命令传入同一个新的 `-prefix` 值；清理时仅删除本组演示创建且已无使用者的 topic。
+
 同一服务的全部方法和副本共享请求 topic；增加方法、客户端、调用不会创建 topic。业务 IDL、handler 和生成客户端与其他后端相同。需要共同部署的服务可配置显式映射；完整说明见 [Kafka 拓扑、预算与故障语义](KAFKA.md)。内存示例把 server/client 放在同一进程，因为该后端没有跨进程传输能力。
+
+## 常见启动问题
+
+| 现象 | 检查与处理 |
+| --- | --- |
+| 无法连接 Broker | 确认地址、端口与认证配置；Kafka 的 advertised.listeners 必须能被客户端访问 |
+| Kafka 提示 topic 不存在 | 在同一 Broker、同一 `-prefix` 下先执行 provision，并确认具备建 topic 权限 |
+| 调用超时或没有响应者 | 确认两个服务均显示 `server ready`，客户端和服务端使用同一 Broker 与命名配置 |
 
 返回 [README](../README.md)，或阅读 [业务接入教程](GETTING-STARTED.md)。

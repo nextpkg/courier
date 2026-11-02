@@ -2,6 +2,13 @@
 
 本文区分功能正确性、短时闭环压测、持续负载验证和容量模型；曲线展示指定环境中的观测，不是吞吐上限或生产服务等级承诺。
 
+## 选择验证入口
+
+- 检查基本正确性：运行 [普通测试](#复现)；检查服务隔离：运行 `TestKafkaCrossProcess`。
+- 评估当前资源配置：先看 [容量规划](KAFKA-CAPACITY.md)，再使用 [可配置负载参数](#资源限额与联合并发扫描)。
+- 检查持续负载：运行 [多服务持续负载](#多服务持续负载)；故障注入使用 [高可用回归](#扩缩容背压与进程故障)。
+- 下文约 900 RPC/s 的图是 [历史默认配置基线](#历史基线曲线)，不是当前已调优配置的容量。
+
 ## 测试分层
 
 | 层次 | 检查对象 | 入口与环境 |
@@ -10,7 +17,7 @@
 | Broker 集成测试 | NATS/Kafka 的路由、恢复、提交与真实传输行为 | `examples`，`integration` 标签及对应 Broker |
 | 跨进程拓扑 | 2 个服务、每服务 2 个进程实例、3 个 Client 的返回值归属 | `TestKafkaCrossProcess`，真实 Kafka |
 | 读取放大 | 1/4/8 个 session 读取一个共享回复分区的字节开销 | `TestKafkaSharedReplyReadAmplification` |
-| 并发扫描 | 不同并发下的成功速率、完成延迟及失败数 | `TestKafkaLoadCurve` |
+| 并发扫描／持续负载 | 不同并发或时长下的速率、延迟、失败及资源趋势 | `TestKafkaLoadCurve`，混合模式需显式开启 |
 
 ### 跨进程拓扑
 
@@ -49,7 +56,7 @@ flowchart TB
 
 闭环负载会在响应变慢时自动降低发起速率，因此曲线不描述固定到达速率下的过载积压；本场景也未覆盖大消息、业务数据库耗时、多 Broker 容灾或长时间稳定性。
 
-## 实测曲线
+## 历史基线曲线
 
 以下曲线是 2026-11-01 的历史基线，代码基线为 `f889f3fa0952ff04a0c268daa2cccbafc0953302`，测试源码摘要见[测量元数据](benchmarks/environment.json)。测量使用 franz-go v1.22.2，metadata 刷新节流为 5 s，producer linger（攒批等待）为 10 ms。
 
@@ -69,7 +76,7 @@ v0.1.0 的 metadata 刷新节流默认为 250 ms，其测试源码与历史基�
 | 64 | 913.74 | 82.40 | 86.56 |
 | 128 | 902.67 | 150.96 | 156.01 |
 
-在该环境与小载荷配置下，并发达到 32 后吞吐进入平台区间，而尾延迟继续增长；这说明继续增加调用并发没有带来相应吞吐收益，具体瓶颈仍需剖析，不能据此推导其他部署的容量。
+在该环境与小载荷配置下，并发达到 32 后吞吐进入平台区间，而尾延迟继续增长；这说明继续增加调用并发没有带来相应吞吐收益，该历史曲线本身不能定位瓶颈，后续 worker 与 CPU 配额对照见 [容量规划](KAFKA-CAPACITY.md)，不能据此推导其他部署的容量。
 
 横轴为同时发起调用的 worker 数；曲线为各档 3 次测量的中位数，吞吐、p95 和失败数的误差线为最小至最大值，p50/p99 仅画中位数；相邻点连线只帮助阅读，不表示未测量档位的预测。
 
@@ -117,7 +124,7 @@ rm -rf .chart-venv
 
 ## 发布并发对照
 
-`TestKafkaLoadCurve` 支持通过 `-kafka-publish-workers` 设置每个客户端的发送工作协程数，通过 `-kafka-load-concurrency` 指定调用并发档位；默认分别为 4 和 `1,8,32,64,128`，每档仍运行三轮，每轮默认持续发起请求 5 秒。每轮日志包含 `publish_workers`，便于区分配置。
+`TestKafkaLoadCurve` 支持通过 `-kafka-publish-workers` 设置每个客户端的发送工作协程数，通过 `-kafka-load-concurrency` 指定调用并发档位；默认分别为 4 和 `1,8,32,64,128`，每档默认运行三轮，可通过 `-kafka-load-trials` 调整，每轮默认持续发起请求 5 秒。每轮日志包含 `publish_workers`，便于区分配置。
 
 例如，在专用 Kafka 环境中测量每客户端 16 个发送 worker：
 
@@ -137,7 +144,7 @@ KAFKA_BROKERS=127.0.0.1:9092 CGO_ENABLED=0 \
 | 参数 | 默认值 | 含义 |
 | --- | ---: | --- |
 | `-kafka-publish-workers` | 4 | 每个 Client 的发送 worker 数；测试有 3 个 Client |
-| `-kafka-server-workers` | 16 | Kafka 请求 topic 的处理 worker 数 |
+| `-kafka-server-workers` | 16 | 每个本地请求 topic 订阅的处理 worker 数 |
 | `-kafka-load-window` | 64 | 请求消费窗口，必须不小于服务端 worker 数 |
 | `-kafka-core-concurrency` | 128 | 核心 Server 的 MaxConcurrent |
 | `-kafka-publish-buffers` | 256 | 每个 transport 的 SDK producer 记录缓冲上限 |
@@ -166,13 +173,15 @@ KAFKA_BROKERS=kafka:9092 GOMAXPROCS=4 CGO_ENABLED=0 \
   -kafka-publish-buffers=2048 -kafka-load-resources
 ```
 
-`kafka:9092` 是测试网络中 Broker 的可达地址；该命令本身不创建 Broker 或设置配额，Broker 应独立运行。实测使用单节点 Kafka 4.4.0、2 CPU / 2 GiB、JVM `-Xms256m -Xmx512m`；生产数据不得用于压测。
+`kafka:9092` 假定测试网络将 Broker 注册为该主机名，部署不同时需替换为可达地址；该命令本身不创建 Broker 或设置配额，Broker 应独立运行。实测使用单节点 Kafka 4.4.0、2 CPU / 2 GiB、JVM `-Xms256m -Xmx512m`；生产数据不得用于压测。
+
+命令中的 `-kafka-load-resources` 只读取容器资源指标，**不会自动执行宿主机内存压力或 swap 停止保护**；容量报告中的压力保护由外部执行脚本提供，复现时应另设监控与停止策略，不将该测试标志视为保护开关。
 
 混合模式创建三个核心 Client、两个 Orders 实例和两个 Inventory 实例，均在应用进程内运行；每服务三个请求分区，所有客户端共享一个回复分区。四个方法为 Orders.Get、Orders.List、Inventory.Reserve、Inventory.Count，每个并发 worker 固定调用一个方法，完成量不强制等比例。`completed_methods` 记录各方法成功次数。
 
 所有业务请求使用全程递增的唯一数字标记；Get、List、Reserve 逐条校验业务 ID 与服务来源，压测专用 Count handler 回显数字标记，使等长输入也可区分，正常示例的 Count 语义不变；错误、空响应、标记或来源不符都计入失败。每轮结束检查客户端 Pending 为零。30 轮各持续发起 20 秒，轮间仅排空与统计，同一组 Client、服务和 Broker 全程复用，不在每轮重建；它是约 10 分钟持续负载验证，不是 24 小时可靠性承诺或固定到达速率过载试验。
 
-实测数据、曲线及本机资源策略见 [Kafka 容量规划](KAFKA-CAPACITY.md#多服务持续负载与本机资源策略)。
+实测数据、曲线及参考环境资源策略见 [Kafka 容量规划](KAFKA-CAPACITY.md#多服务持续负载与资源配置)。
 
 仓库保留逐轮 CSV、资源时间序列及环境摘要，安装 Python 3 与 matplotlib 后可从仓库根目录重绘本次图表：
 
@@ -183,7 +192,6 @@ python3 scripts/plot-kafka-soak.py \
 ```
 
 吞吐、延迟和 CPU 横轴为累计请求发起时间；内存横轴为首次资源采样后的实际时间，包含启动阶段，两种横轴不用于精确事件对齐。每轮 p99 不是全程请求合并后的 p99。
-
 
 ### 分段耗时诊断
 
@@ -260,6 +268,6 @@ NATS_SERVER="$(command -v nats-server)" \
 
 ### 发布失败诊断
 
-`TestKafkaLoadCurve` 的 `failure_reasons` 按具体错误类型与消息统计失败（最多 16 种，其余归入 other），返回值不匹配单列，不再把超时与结果错误混为一类；成功调用 p99 不包含失败调用的等待时间。
+`TestKafkaLoadCurve` 的 `failure_reasons` 按具体错误类型与消息统计失败（最多 16 种，其余归入 other），返回值不匹配使用独立原因分类；成功调用 p99 不包含失败调用的等待时间。
 
 测试默认采样每个 transport 前 5 个 SDK 发布错误（`KAFKA_PUBLISH_ERROR`），以及前 32 个超过 500 ms 或返回错误的 Produce/OffsetCommit 请求（`KAFKA_SLOW_WIRE`），包含 UTC 时间、请求排队、写入及等待/读取响应耗时；该采样只用于测试，不改变生产确认语义。适配器消费重入组日志保留首个处理/回复发布错误，便于区分超时、过载和其他失败；采样不足以代替完整错误计数。

@@ -10,6 +10,8 @@
 | `transport/kafka` | `github.com/twmb/franz-go` | v1.22.2 | Kafka producer、消费组、分区与 offset 控制 |
 | `transport/kafka` | `github.com/twmb/franz-go/pkg/kmsg` | v1.15.0 | Kafka metadata 和 ListOffsets 请求 |
 
+本文维护依赖与生成工具约束；第一次接入业务请从 [Hello 教程](GETTING-STARTED.md) 开始，运行已有示例见 [跨进程示例](EXAMPLES.md)。
+
 ## 模块边界
 
 核心运行库依赖标准库和 Thrift；代码生成扩展使用 Go 标准库。三个传输适配器分别引入自己的 SDK，应用可按所需后端选择依赖。示例、部署工具和集成测试位于 `examples` 模块。
@@ -18,7 +20,7 @@
 
 ## 外部工具
 
-- Apache Thrift **0.25.0** 编译器用于生成 Go 类型、服务接口和 Processor；`courier-gen` 校验生成文件中的版本标记，并补充异步客户端。修改编译器版本时需同时检查运行库兼容性和生成结果。
+- Apache Thrift **0.25.0** 编译器用于生成 Go 类型、服务接口和 Processor；`courier-gen` 校验生成文件中的版本标记，并补充 Listen/Dial、注册函数及同步／异步调用入口。修改编译器版本时需同时检查运行库兼容性和生成结果。
 - `nats-server` 用于运行 NATS 示例和集成测试；故障测试通过 `NATS_SERVER` 指定可执行文件，启动独立测试进程。
 - Kafka Broker 用于 Kafka 示例和集成测试；连接地址由 `KAFKA_BROKERS` 或示例的 `-brokers` 参数指定。
 

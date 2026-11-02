@@ -2,6 +2,8 @@
 
 实现使用 franz-go v1.22.2 和匹配的 kmsg v1.15.0；源码在 `transport/kafka`，部署工具在 `examples/brokeradmin`，集成测试位于 `examples/kafka*_test.go`。
 
+首次运行请先完成 [Kafka 示例](EXAMPLES.md#kafka)；本文供部署与运维查阅，参数的容量选择依据见 [容量规划](KAFKA-CAPACITY.md)。
+
 ## 部署模型
 
 客户端通过服务名调用，不指定服务实例；同服务的多个副本加入同一消费组，由 Kafka 分区分配决定接收请求的副本，分区内的 worker 可并发执行，因此不保证业务完成顺序。
@@ -68,7 +70,7 @@ flowchart LR
 |---|---:|---|
 | 核心 Client MaxInFlight / PublishWorkers | 256 / 4 | 每个 core client 的在途数 / 固定发送 worker |
 | 核心 Server MaxConcurrent | 32 | 每个 server 的 handler 并发；超额返回 overloaded |
-| Workers / Window | 16 / 64 | 每个请求 topic 的 worker 数 / 未提交工作数 |
+| Workers / Window | 16 / 64 | 每个本地请求 topic 订阅的 worker 数 / 未提交工作数，不是全消费组总额 |
 | PublishBuffers | 256 | 每个 transport 的原生 producer 缓冲记录数；满则 ErrOverloaded |
 | MaxFrameBytes | 1 MiB | 包含外层 JSON/base64；适配器配置允许 512 B–16 MiB |
 | MaxTopics | 128 | 每个 transport 的有界 topic metadata 项数，包含回复 topic |
@@ -78,6 +80,8 @@ flowchart LR
 | OperationTimeout / ProcessingTimeout | 5 s / 30 s | 发布、提交等操作 / 单个 handler 的期限 |
 | StartupTimeout | 15 s | 启动连接、reader、消费组准备的等待上限 |
 | RebalanceTimeout | 默认 150 s | 自动按整个 Window 的 worker 批数计算，见下式 |
+
+多个进程或多个 transport 订阅同一请求 topic 时，各自分配 worker 与 window；计算整机预算时需要累加，增加 Broker 分区不会自动增加这些本地名额。
 
 重平衡预算必须严格大于 `ceil(Window/Workers) × (ProcessingTimeout + OperationTimeout) + OperationTimeout`，默认再加 5 秒余量。该预算覆盖排队的所有 handler 批次、回复确认和最终提交。部署必须将该预算与 Broker group/max-poll 策略匹配；缩小 window 和单次处理期限可缩短排空时间。忽略 context 的业务 handler 无法被 Go 强制终止，可能妨碍关闭与重平衡；Close 的 context 仅限制调用方等待。
 
