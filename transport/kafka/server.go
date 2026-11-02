@@ -134,6 +134,7 @@ type window struct {
 	partitions   map[int32][]*entry
 	size, active int
 	failed       bool
+	firstError   error
 }
 
 func newWindow() *window { return &window{partitions: map[int32][]*entry{}} }
@@ -150,6 +151,9 @@ func (w *window) complete(c completion) {
 	w.active--
 	if c.err != nil {
 		w.failed = true
+		if w.firstError == nil {
+			w.firstError = c.err
+		}
 	}
 }
 func (w *window) prefixes() ([]*kgo.Record, map[int32]int) {
@@ -274,7 +278,7 @@ func (t *Transport) consume(parent context.Context, topic string, handlers map[s
 			return err
 		}
 		if w.failed && w.active == 0 {
-			return fmt.Errorf("reply publication/processing failed; unfinished offsets will be redelivered")
+			return fmt.Errorf("reply publication/processing failed; unfinished offsets will be redelivered: %w", w.firstError)
 		}
 		if w.size == 0 {
 			wantsRebalance.Store(false)

@@ -221,3 +221,9 @@ NATS_SERVER="$(command -v nats-server)" \
 这些测试覆盖应用进程的可用性及单 Broker 故障行为，不验证多 Broker 集群选主、跨可用区故障或长时间稳定性；恢复时间取决于 Broker、客户端超时配置及部署环境，测试耗时不是服务等级承诺。
 
 `TestKafkaLeaderMetadataRecovery` 通过 TCP 转发真实 Kafka 流量，并将一次成功的 Produce 确认替换为 `NOT_LEADER_FOR_PARTITION`：5 秒 metadata 节流配置应无法在 2 秒内完成发送确认，默认配置应恢复，并验证重试没有产生第二条业务执行；Broker 已保存首条记录，因此该测试也覆盖确认丢失后的幂等发布。
+
+### 发布失败诊断
+
+`TestKafkaLoadCurve` 的 `failure_reasons` 按具体错误类型与消息统计失败（最多 16 种，其余归入 other），返回值不匹配单列，不再把超时与结果错误混为一类；成功调用 p99 不包含失败调用的等待时间。
+
+测试默认采样每个 transport 前 5 个 SDK 发布错误（`KAFKA_PUBLISH_ERROR`），以及前 32 个超过 500 ms 或返回错误的 Produce/OffsetCommit 请求（`KAFKA_SLOW_WIRE`），包含 UTC 时间、请求排队、写入及等待/读取响应耗时；该采样只用于测试，不改变生产确认语义。适配器消费重入组日志保留首个处理/回复发布错误，便于区分超时、过载和其他失败；采样不足以代替完整错误计数。

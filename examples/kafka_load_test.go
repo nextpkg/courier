@@ -54,6 +54,8 @@ func TestKafkaLoadCurve(t *testing.T) {
 	_, opts := newKafkaEnv(t, 3)
 	opts.PublishBuffers = *loadPublishBuffers
 	serverOpts := opts
+	serverOpts.Hooks = append(serverOpts.Hooks, &loadPublishErrors{t: t, role: "server"})
+	opts.Hooks = append(opts.Hooks, &loadPublishErrors{t: t, role: "client"})
 	serverOpts.Workers, serverOpts.Window = *loadServerWorkers, *loadWindow
 	serverTiming, clientTiming := newLoadDiagnostics(), newLoadDiagnostics()
 	if *loadDiagnosticsEnabled {
@@ -89,6 +91,7 @@ func TestKafkaLoadCurve(t *testing.T) {
 			var wg sync.WaitGroup
 			var latencies []float64
 			failures := 0
+			failureReasons := make(map[string]int)
 			var resourcesBefore map[string]uint64
 			if *loadResourceMetrics {
 				var err error
@@ -112,6 +115,14 @@ func TestKafkaLoadCurve(t *testing.T) {
 						mu.Lock()
 						if err != nil || result == nil || result.ID != id || result.Source != "Orders" {
 							failures++
+							reason := "nil or mismatched response"
+							if err != nil {
+								reason = fmt.Sprintf("%T: %v", err, err)
+							}
+							if _, known := failureReasons[reason]; !known && len(failureReasons) >= 16 {
+								reason = "other errors (sample limit)"
+							}
+							failureReasons[reason]++
 						} else {
 							latencies = append(latencies, elapsed)
 						}
@@ -128,7 +139,7 @@ func TestKafkaLoadCurve(t *testing.T) {
 			percentile := func(p float64) float64 { return latencies[int(float64(len(latencies)-1)*p)] }
 			metrics := map[string]any{
 				"admission_seconds": loadDuration.Seconds(), "concurrency": concurrency, "trial": trial, "sessions": 3, "publish_workers": *loadPublishWorkers, "server_workers": *loadServerWorkers, "window": *loadWindow, "core_concurrency": *loadCoreConcurrency, "publish_buffers": *loadPublishBuffers, "max_in_flight": *loadMaxInFlight,
-				"successes": len(latencies), "failures": failures, "elapsed_seconds": elapsed,
+				"successes": len(latencies), "failures": failures, "failure_reasons": failureReasons, "elapsed_seconds": elapsed,
 				"successful_calls_per_second": float64(len(latencies)) / elapsed,
 				"p50_ms":                      percentile(.50), "p95_ms": percentile(.95), "p99_ms": percentile(.99),
 			}

@@ -100,10 +100,11 @@ func TestCommitPrefixNeverSkipsUnfinishedOrFailed(t *testing.T) {
 	}
 	a = w.add(&kgo.Record{Partition: 0, Offset: 30})
 	b = w.add(&kgo.Record{Partition: 0, Offset: 31})
-	w.complete(completion{a, errors.New("reply not published")})
+	cause := errors.New("reply not published")
+	w.complete(completion{a, cause})
 	w.complete(completion{b, nil})
 	records, _ = w.prefixes()
-	if len(records) != 0 || !w.failed {
+	if len(records) != 0 || !w.failed || !errors.Is(w.firstError, cause) {
 		t.Fatal("advanced past response publication failure")
 	}
 }

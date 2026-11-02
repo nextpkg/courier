@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -132,4 +133,24 @@ func (o loadObservedTransport) ListenServices(ctx context.Context, handlers map[
 		wrapped[name] = o.d.wrap(h)
 	}
 	return o.Transport.(courier.ServiceListener).ListenServices(ctx, wrapped)
+}
+
+// loadPublishErrors samples failed SDK completions without tracing successful records.
+type loadPublishErrors struct {
+	t         *testing.T
+	role      string
+	count     atomic.Int64
+	slowCount atomic.Int64
+}
+
+func (h *loadPublishErrors) OnProduceRecordUnbuffered(_ *kgo.Record, err error) {
+	if err != nil && h.count.Add(1) <= 5 {
+		h.t.Logf("KAFKA_PUBLISH_ERROR time=%s role=%s type=%T error=%v", time.Now().UTC().Format(time.RFC3339Nano), h.role, err, err)
+	}
+}
+
+func (h *loadPublishErrors) OnBrokerE2E(_ kgo.BrokerMetadata, key int16, e kgo.BrokerE2E) {
+	if (key == 0 || key == 8) && (e.DurationE2E()+e.WriteWait > 500*time.Millisecond || e.Err() != nil) && h.slowCount.Add(1) <= 32 {
+		h.t.Logf("KAFKA_SLOW_WIRE time=%s role=%s key=%d wait=%s write=%s read_wait=%s read=%s error=%v", time.Now().UTC().Format(time.RFC3339Nano), h.role, key, e.WriteWait, e.TimeToWrite, e.ReadWait, e.TimeToRead, e.Err())
+	}
 }
