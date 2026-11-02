@@ -113,7 +113,7 @@ rm -rf .chart-venv
 
 ## 发布并发对照
 
-`TestKafkaLoadCurve` 支持通过 `-kafka-publish-workers` 设置每个客户端的发送工作协程数，通过 `-kafka-load-concurrency` 指定调用并发档位；默认分别为 4 和 `1,8,32,64,128`，每档仍运行三轮，每轮持续发起请求 5 秒。每轮日志包含 `publish_workers`，便于区分配置。
+`TestKafkaLoadCurve` 支持通过 `-kafka-publish-workers` 设置每个客户端的发送工作协程数，通过 `-kafka-load-concurrency` 指定调用并发档位；默认分别为 4 和 `1,8,32,64,128`，每档仍运行三轮，每轮默认持续发起请求 5 秒。每轮日志包含 `publish_workers`，便于区分配置。
 
 例如，在专用 Kafka 环境中测量每客户端 16 个发送 worker：
 
@@ -125,6 +125,25 @@ KAFKA_BROKERS=127.0.0.1:9092 CGO_ENABLED=0 \
 ```
 
 该命令本身不设置 CPU 或内存限额；资源受限测试应在容器或目标机器中执行，记录应用和 Broker 各自的配额。比较发送并发时保持 producer linger、确认级别、消息大小及服务端参数不变，同时报告吞吐、尾延迟、失败数和资源占用；仅增加业务调用并发可能只增加框架队列中的等待。
+
+### 资源限额与联合并发扫描
+
+联合调整发送与处理并发时，可使用以下测试参数；这些参数仅影响压测，不改变运行库默认值：
+
+| 参数 | 默认值 | 含义 |
+| --- | ---: | --- |
+| `-kafka-publish-workers` | 4 | 每个 Client 的发送 worker 数；测试有 3 个 Client |
+| `-kafka-server-workers` | 16 | Kafka 请求 topic 的处理 worker 数 |
+| `-kafka-load-window` | 64 | 请求消费窗口，必须不小于服务端 worker 数 |
+| `-kafka-core-concurrency` | 128 | 核心 Server 的 MaxConcurrent |
+| `-kafka-publish-buffers` | 256 | 每个 transport 的 SDK producer 记录缓冲上限 |
+| `-kafka-max-in-flight` | 512 | 每个 Client 的 MaxInFlight |
+| `-kafka-load-duration` | 5s | 每轮持续发起请求的时间，随后等待在途请求排空 |
+| `-kafka-load-resources` | false | 读取 Linux cgroup v2 的 CPU 与内存计数 |
+
+`-kafka-load-resources` 要求进程处于设置了 CPU quota 的 cgroup v2 容器中；环境不满足时测试失败，不将缺失指标报告为零。每轮 `KAFKA_LOAD` 增加 `cpu_cores`（平均消耗核数）、`cpu_quota_cores`、`cpu_quota_utilization`（消耗核数/配额）、`throttled_periods`（本轮 CPU 配额节流周期数）和 `memory_peak_bytes`（容器自启动以来的峰值，不是本轮独立峰值）。
+
+CPU 计数围绕每轮负载取差值，不包含连接初始化；应用容器同时运行压测调用方、客户端和服务端，因此指标是合计资源。比较 1C2G 与 2C4G 时，应同时调整容器 CPU/内存配额与 GOMAXPROCS，保持 Broker、消息大小和确认策略相同，并区分 CPU 利用率相对一核还是相对全部配额。
 
 ### 分段耗时诊断
 
