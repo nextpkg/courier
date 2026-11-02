@@ -11,7 +11,7 @@ thrift -version
 
 Homebrew 默认版本可能随时间变化；继续前必须确认输出为 `Thrift version 0.25.0`，不匹配时安装该版本编译器后再继续，不能仅修改生成文件的版本标记。其他平台同样安装 0.25.0 并将可执行文件加入 PATH。
 
-本文使用 POSIX shell；Go 和 Git 依赖下载需网络连接，具体权限配置见第 1 步。
+本文使用 POSIX shell；Go 和 Git 依赖下载需网络连接，依赖获取方式见第 1 步。
 
 ## 代码与进程的分工
 
@@ -29,26 +29,18 @@ Homebrew 默认版本可能随时间变化；继续前必须确认输出为 `Thr
 
 ## 1. 创建应用并获取依赖
 
-需要 Git 和仓库读取权限；无需先克隆 Courier，也无需在业务项目添加本地 `replace`。私有仓库应先确保 Git 能通过已配置的 HTTPS 凭据或 SSH 密钥访问；使用 GitHub CLI 配置 HTTPS 凭据时可执行：
+仓库公开可读，无需 GitHub 登录或为本仓库设置 `GOPRIVATE`；无需先克隆 Courier，也无需在业务项目添加本地 `replace`。需要 Go、Git 和访问依赖源的网络；以下命令使用 POSIX shell，在准备存放业务项目的目录执行，`courier-hello` 必须是新目录：
 
 ```sh
-gh auth login --hostname github.com --git-protocol https
-gh auth setup-git --hostname github.com
-```
-
-已有可用 Git 凭据时跳过登录步骤；登录账号必须拥有 `nextpkg/courier` 的读取权限，`GOPRIVATE` 只控制 Go 下载路由，不授予权限。以下命令使用 POSIX shell，在准备存放业务项目的目录执行，`courier-hello` 必须是新目录：
-
-```sh
-export GOPRIVATE="${GOPRIVATE:+$GOPRIVATE,}github.com/nextpkg/courier"
 mkdir courier-hello
 cd courier-hello
 export GOWORK=off
 go mod init example.com/courier-hello
-go get github.com/nextpkg/courier@v0.1.0 github.com/nextpkg/courier/transport/memory@v0.1.0
+go get github.com/nextpkg/courier@v1.0.0 github.com/nextpkg/courier/transport/memory@v1.0.0
 mkdir -p idl gen
 ```
 
-本教程固定使用 `v0.1.0`，将 `go.mod`、`go.sum` 纳入业务项目版本控制以复现依赖。升级时通过 `go get <模块路径>@<目标版本>` 显式选择版本；需要验证主分支代码时可使用 `@main`，Go 会将解析后的版本记录在 `go.mod` 中。核心和各适配器可独立获取，例如 Kafka 适配器路径为 `github.com/nextpkg/courier/transport/kafka`。
+本教程固定使用 `v1.0.0`，将 `go.mod`、`go.sum` 纳入业务项目版本控制以复现依赖。升级时通过 `go get <模块路径>@<目标版本>` 显式选择版本；需要验证主分支代码时可使用 `@main`，Go 会将解析后的版本记录在 `go.mod` 中。核心和各适配器可独立获取，例如 Kafka 适配器路径为 `github.com/nextpkg/courier/transport/kafka`。
 
 `example.com/courier-hello` 是本教程的应用模块名，可替换为业务模块名，但必须同步修改下文的 `package_prefix` 和 `gen/hello` 导入路径；框架的 import 使用 `github.com/nextpkg/courier`。后续命令都在 `courier-hello` 中运行。
 

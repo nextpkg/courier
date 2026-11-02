@@ -3,7 +3,7 @@ module github.com/nextpkg/courier/transport/nats
 go 1.26.0
 
 require (
-	github.com/nextpkg/courier v0.1.0
+	github.com/nextpkg/courier v1.0.0
 	github.com/nats-io/nats.go v1.55.0
 )
 

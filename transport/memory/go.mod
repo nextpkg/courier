@@ -3,7 +3,7 @@ module github.com/nextpkg/courier/transport/memory
 go 1.26.0
 
 require (
-	github.com/nextpkg/courier v0.1.0
+	github.com/nextpkg/courier v1.0.0
 	github.com/ThreeDotsLabs/watermill v1.5.3
 )
 

@@ -3,7 +3,7 @@ module github.com/nextpkg/courier/transport/kafka
 go 1.26.0
 
 require (
-	github.com/nextpkg/courier v0.1.0
+	github.com/nextpkg/courier v1.0.0
 	github.com/twmb/franz-go v1.22.2
 	github.com/twmb/franz-go/pkg/kmsg v1.15.0
 )

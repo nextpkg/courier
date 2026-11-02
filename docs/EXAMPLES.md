@@ -1,6 +1,6 @@
 # 运行跨进程示例
 
-需要 Go 1.26 或以上、Git 和仓库读取权限；先克隆仓库，以下命令均从仓库根目录执行：
+需要 Go 1.26 或以上和 Git；先克隆仓库，以下命令均从仓库根目录执行：
 
 ```sh
 git clone https://github.com/nextpkg/courier.git
