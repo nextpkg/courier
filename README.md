@@ -74,5 +74,5 @@ result, err := client.Get(ctx, "order-42", 0)
 | 原理、调用语义、超时及传输差异 | [架构与传输语义](docs/ARCHITECTURE.md) |
 | 依赖版本、模块结构与代码生成 | [依赖与生成工具](docs/DEPENDENCIES.md) |
 | Kafka topic、消费组与故障处理 | [Kafka 路由与资源配置](docs/KAFKA.md) |
-| Kafka 的容量与资源开销 | [容量规划](docs/KAFKA-CAPACITY.md) |
+| Kafka 性能数据口径、容量与资源开销 | [容量规划](docs/KAFKA-CAPACITY.md#性能数据口径) |
 | 测试方法、实测性能曲线与复现 | [测试与性能](docs/TESTING.md) |
