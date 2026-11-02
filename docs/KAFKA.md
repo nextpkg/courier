@@ -109,3 +109,7 @@ Kafka 日志、消费位置与投递保证的基础见 [Apache Kafka Design](htt
 `Options.MetadataMinAge` 默认 250 ms，最小值 10 ms，控制原生客户端 metadata 刷新的节流间隔，适用于调用端和服务端应用内的 producer、请求 consumer 及回复 reader，不修改 Kafka Broker 配置；它不是固定轮询周期，也不是故障恢复时间保证，不改变 producer 的攒批设置。间隔较大可减少错误期间的 metadata 请求，但可能延长新分区就绪或 Leader 切换后的恢复，配置时应留足调用期限和发送操作期限。
 
 Metadata 已报告 Leader 不代表该分区立即可接受 Produce；新建 topic 或 Leader 切换期间仍可能短暂返回 `NOT_LEADER_FOR_PARTITION`，SDK 在刷新 metadata 后重试发布，幂等 producer 保持启用。该机制只处理发布层重试，不提供业务副作用的恰好一次保证。
+
+## 按 CPU 选择启动配置
+
+小消息吞吐场景可显式使用 `AutoCapacityProfile()`，在初始化前统一选择客户端发送、服务端处理、窗口和缓冲配置；1 核与 2 核的实测值、使用示例及适用边界见 [容量规划](KAFKA-CAPACITY.md#启动时自动选择配置)。原有默认值不变，不提供运行中的自动扩缩容。
