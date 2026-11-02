@@ -126,6 +126,34 @@ KAFKA_BROKERS=127.0.0.1:9092 CGO_ENABLED=0 \
 
 该命令本身不设置 CPU 或内存限额；资源受限测试应在容器或目标机器中执行，记录应用和 Broker 各自的配额。比较发送并发时保持 producer linger、确认级别、消息大小及服务端参数不变，同时报告吞吐、尾延迟、失败数和资源占用；仅增加业务调用并发可能只增加框架队列中的等待。
 
+### 分段耗时诊断
+
+使用 `-kafka-server-workers` 和 `-kafka-load-window` 对照服务端适配器的 Workers/Window，默认分别为 16/64；`-kafka-load-diagnostics` 开启测试专用的 SDK hooks 与 handler 包装，生产运行时不启用该采样。
+
+```sh
+KAFKA_BROKERS=127.0.0.1:9092 CGO_ENABLED=0 \
+  go test -tags=integration ./examples -run '^TestKafkaLoadCurve$' \
+  -count=1 -v -timeout=180s -args \
+  -kafka-publish-workers=16 -kafka-load-concurrency=128 \
+  -kafka-server-workers=32 -kafka-load-window=64 -kafka-load-diagnostics
+```
+
+`KAFKA_DIAGNOSTICS` 按客户端和服务端分别记录计数、总耗时、最大耗时与批次大小，平均耗时为 `total_ms / count`：
+
+| 字段 | 测量边界 |
+| --- | --- |
+| `produce_success` | SDK 接收待发记录至成功发布回调，包含攒批、排队、重试与确认 |
+| `broker_api_0_wire` | Produce 网络写入开始至响应读完，包含网络和 Broker 处理，不含攒批 |
+| `broker_api_8_wire` | OffsetCommit 请求的相同网络往返边界 |
+| `broker_api_*_write_wait` | 请求在 SDK 内生成后，等待写入连接的时间 |
+| `fetch_buffer_to_handler` | 请求进入 SDK fetch 缓冲至进入核心 handler，包含消费轮询及适配器队列等待 |
+| `core_handler` | 核心请求校验、Thrift 编解码与业务方法处理，不含适配器回复发布 |
+| `batch_records / batches` | 每个成功写入分区批次的平均记录数 |
+
+诊断数据覆盖诊断对象创建至扫描结束，包括连接初始化、预热与轮次间隙；发布记录数和网络请求数不同，不能将两种平均耗时相减当作精确攒批耗时。采样包含锁和额外 envelope 解码，需与未采样基线对照，避免将观测开销误判为业务耗时。
+
+服务端 worker 在核心 handler 返回后仍等待回复发布确认；业务处理很快时，吞吐可能主要受 worker 数与发布等待的组合限制。定位时应固定 Broker、客户端和消息大小，仅改变服务端 Workers，再对照分段耗时与吞吐；CPU 利用率低本身不能证明 Broker 饱和。
+
 ## 完整 Broker 回归
 
 从仓库根目录运行，使用专用测试 Broker；Kafka 测试需要创建及删除 topic 的权限，`NATS_SERVER` 用于启动、停止和重启故障测试专用进程。

@@ -22,10 +22,17 @@ import (
 var loadPublishWorkers = flag.Int("kafka-publish-workers", 4, "publishing workers per client in TestKafkaLoadCurve")
 var loadConcurrency = flag.String("kafka-load-concurrency", "1,8,32,64,128", "comma-separated call concurrency levels in TestKafkaLoadCurve")
 
+var loadServerWorkers = flag.Int("kafka-server-workers", 16, "Kafka service workers in TestKafkaLoadCurve")
+var loadWindow = flag.Int("kafka-load-window", 64, "Kafka completion window in TestKafkaLoadCurve")
+var loadDiagnosticsEnabled = flag.Bool("kafka-load-diagnostics", false, "log SDK and handler timing in TestKafkaLoadCurve")
+
 // TestKafkaLoadCurve measures closed-loop load after transport startup and warmup.
 func TestKafkaLoadCurve(t *testing.T) {
 	if *loadPublishWorkers < 1 {
 		t.Fatal("kafka-publish-workers must be positive")
+	}
+	if *loadServerWorkers < 1 || *loadWindow < *loadServerWorkers {
+		t.Fatal("kafka-load-window must be at least the positive kafka-server-workers value")
 	}
 	var levels []int
 	for _, value := range strings.Split(*loadConcurrency, ",") {
@@ -36,7 +43,20 @@ func TestKafkaLoadCurve(t *testing.T) {
 		levels = append(levels, n)
 	}
 	_, opts := newKafkaEnv(t, 3)
-	kafkaServer(t, newKafkaTransport(t, opts), &handlers.Orders{})
+	serverOpts := opts
+	serverOpts.Workers, serverOpts.Window = *loadServerWorkers, *loadWindow
+	serverTiming, clientTiming := newLoadDiagnostics(), newLoadDiagnostics()
+	if *loadDiagnosticsEnabled {
+		serverOpts.Hooks = append(serverOpts.Hooks, serverTiming)
+		opts.Hooks = append(opts.Hooks, clientTiming)
+	}
+	var serverTransport courier.Transport = newKafkaTransport(t, serverOpts)
+	if *loadDiagnosticsEnabled {
+		serverTransport = loadObservedTransport{serverTransport, serverTiming}
+		defer serverTiming.report(t, "server")
+		defer clientTiming.report(t, "client")
+	}
+	kafkaServer(t, serverTransport, &handlers.Orders{})
 	var clients []*courier.Client
 	for i := 0; i < 3; i++ {
 		c, err := courier.NewClient(context.Background(), newKafkaTransport(t, opts), courier.ClientOptions{MaxInFlight: 512, DefaultTimeout: 8 * time.Second, PublishWorkers: *loadPublishWorkers})
@@ -85,7 +105,7 @@ func TestKafkaLoadCurve(t *testing.T) {
 			sort.Float64s(latencies)
 			percentile := func(p float64) float64 { return latencies[int(float64(len(latencies)-1)*p)] }
 			data, err := json.Marshal(map[string]any{
-				"concurrency": concurrency, "trial": trial, "sessions": 3, "publish_workers": *loadPublishWorkers,
+				"concurrency": concurrency, "trial": trial, "sessions": 3, "publish_workers": *loadPublishWorkers, "server_workers": *loadServerWorkers, "window": *loadWindow,
 				"successes": len(latencies), "failures": failures, "elapsed_seconds": elapsed,
 				"successful_calls_per_second": float64(len(latencies)) / elapsed,
 				"p50_ms":                      percentile(.50), "p95_ms": percentile(.95), "p99_ms": percentile(.99),
