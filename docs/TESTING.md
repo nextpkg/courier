@@ -111,6 +111,21 @@ rm -rf .chart-venv
 
 `TestKafkaSharedReplyReadAmplification` 使用确切的读取/匹配记录数断言校验共享回复行为；`TestKafkaLoadCurve` 校验返回值和 pending 清理，但不设置固定性能阈值，以免把单机调度波动当作功能回归。容量估算见 [Kafka 容量规划](KAFKA-CAPACITY.md)，传输故障排查见 [Kafka 路由与资源配置](KAFKA.md)。
 
+## 发布并发对照
+
+`TestKafkaLoadCurve` 支持通过 `-kafka-publish-workers` 设置每个客户端的发送工作协程数，通过 `-kafka-load-concurrency` 指定调用并发档位；默认分别为 4 和 `1,8,32,64,128`，每档仍运行三轮，每轮持续发起请求 5 秒。每轮日志包含 `publish_workers`，便于区分配置。
+
+例如，在专用 Kafka 环境中测量每客户端 16 个发送 worker：
+
+```sh
+KAFKA_BROKERS=127.0.0.1:9092 CGO_ENABLED=0 \
+  go test -tags=integration ./examples -run '^TestKafkaLoadCurve$' \
+  -count=1 -v -timeout=180s -args \
+  -kafka-publish-workers=16 -kafka-load-concurrency=32,128,256
+```
+
+该命令本身不设置 CPU 或内存限额；资源受限测试应在容器或目标机器中执行，记录应用和 Broker 各自的配额。比较发送并发时保持 producer linger、确认级别、消息大小及服务端参数不变，同时报告吞吐、尾延迟、失败数和资源占用；仅增加业务调用并发可能只增加框架队列中的等待。
+
 ## 完整 Broker 回归
 
 从仓库根目录运行，使用专用测试 Broker；Kafka 测试需要创建及删除 topic 的权限，`NATS_SERVER` 用于启动、停止和重启故障测试专用进程。

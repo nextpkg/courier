@@ -5,8 +5,11 @@ package examples_test
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,19 +19,37 @@ import (
 	"github.com/nextpkg/courier/examples/handlers"
 )
 
+var loadPublishWorkers = flag.Int("kafka-publish-workers", 4, "publishing workers per client in TestKafkaLoadCurve")
+var loadConcurrency = flag.String("kafka-load-concurrency", "1,8,32,64,128", "comma-separated call concurrency levels in TestKafkaLoadCurve")
+
 // TestKafkaLoadCurve measures closed-loop load after transport startup and warmup.
 func TestKafkaLoadCurve(t *testing.T) {
+	if *loadPublishWorkers < 1 {
+		t.Fatal("kafka-publish-workers must be positive")
+	}
+	var levels []int
+	for _, value := range strings.Split(*loadConcurrency, ",") {
+		n, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || n < 1 {
+			t.Fatalf("invalid concurrency %q", value)
+		}
+		levels = append(levels, n)
+	}
 	_, opts := newKafkaEnv(t, 3)
 	kafkaServer(t, newKafkaTransport(t, opts), &handlers.Orders{})
 	var clients []*courier.Client
 	for i := 0; i < 3; i++ {
-		c := kafkaClient(t, newKafkaTransport(t, opts))
+		c, err := courier.NewClient(context.Background(), newKafkaTransport(t, opts), courier.ClientOptions{MaxInFlight: 512, DefaultTimeout: 8 * time.Second, PublishWorkers: *loadPublishWorkers})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { closeTestResource(t, c) })
 		clients = append(clients, c)
 		if _, err := demo.NewOrdersAsyncClient(c).Get(context.Background(), "warmup", 0); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, concurrency := range []int{1, 8, 32, 64, 128} {
+	for _, concurrency := range levels {
 		for trial := 1; trial <= 3; trial++ {
 			var mu sync.Mutex
 			var wg sync.WaitGroup
@@ -64,7 +85,7 @@ func TestKafkaLoadCurve(t *testing.T) {
 			sort.Float64s(latencies)
 			percentile := func(p float64) float64 { return latencies[int(float64(len(latencies)-1)*p)] }
 			data, err := json.Marshal(map[string]any{
-				"concurrency": concurrency, "trial": trial, "sessions": 3,
+				"concurrency": concurrency, "trial": trial, "sessions": 3, "publish_workers": *loadPublishWorkers,
 				"successes": len(latencies), "failures": failures, "elapsed_seconds": elapsed,
 				"successful_calls_per_second": float64(len(latencies)) / elapsed,
 				"p50_ms":                      percentile(.50), "p95_ms": percentile(.95), "p99_ms": percentile(.99),
