@@ -43,6 +43,6 @@ CGO_ENABLED=0 go run ./examples/cmd/kafka-demo -mode client -brokers 127.0.0.1:9
 
 两个服务端终端出现 `server ready` 后再运行客户端；客户端完成后退出，服务端用 `Ctrl+C` 停止，Broker 由其运维方式管理。
 
-服务的全部方法、副本共享请求 topic；增加方法、客户端、调用不会创建 topic。业务 IDL、handler 和生成客户端与其他后端相同。需要共同部署的服务可配置显式映射；完整说明见 [Kafka 拓扑、预算与故障语义](KAFKA.md)。内存示例把 server/client 放在同一进程，因为该后端没有跨进程传输能力。
+同一服务的全部方法和副本共享请求 topic；增加方法、客户端、调用不会创建 topic。业务 IDL、handler 和生成客户端与其他后端相同。需要共同部署的服务可配置显式映射；完整说明见 [Kafka 拓扑、预算与故障语义](KAFKA.md)。内存示例把 server/client 放在同一进程，因为该后端没有跨进程传输能力。
 
-返回 [README](../README.md)，或阅读 [接入自己的业务](GETTING-STARTED.md)。
+返回 [README](../README.md)，或阅读 [业务接入教程](GETTING-STARTED.md)。

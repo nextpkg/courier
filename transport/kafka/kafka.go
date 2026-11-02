@@ -22,6 +22,8 @@ import (
 	"github.com/twmb/franz-go/pkg/sasl"
 )
 
+// Options configures Kafka routing, per-transport limits, and SDK connections.
+// Topics must exist before use; New applies defaults to zero-valued optional fields.
 type Options struct {
 	Brokers                                                               []string
 	Prefix                                                                string
@@ -31,10 +33,10 @@ type Options struct {
 	Workers, Window, PublishBuffers, MaxFrameBytes                        int
 	MaxTopics, MaxTopicPartitions, MaxSubscriptions                       int
 	OperationTimeout, ProcessingTimeout, RebalanceTimeout, StartupTimeout time.Duration
-	// MetadataMinAge bounds metadata refresh throttling after leader errors.
+	// MetadataMinAge is the SDK metadata refresh throttle for producers and readers.
+	// Zero selects 250 ms; values below 10 ms are rejected. It is not a recovery deadline.
 	MetadataMinAge time.Duration
-	// These reuse native SDK extension types without exposing routing/group
-	// overrides that could invalidate RPC delivery guarantees.
+	// ClientID identifies SDK connections created by this transport.
 	ClientID  string
 	TLSConfig *tls.Config
 	SASL      []sasl.Mechanism
@@ -46,6 +48,9 @@ type metadata struct {
 	partitions []int32
 	expires    time.Time
 }
+
+// Transport owns its Kafka producer, consumers, and reply readers.
+// Close client and server subscriptions before closing the transport.
 type Transport struct {
 	opts                                                                                Options
 	producer                                                                            *kgo.Client

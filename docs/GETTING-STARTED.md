@@ -1,8 +1,8 @@
 # 从零创建 Hello 服务
 
-这个教程创建一个独立 Go 应用，调用自己定义的 `Hello(name)` 方法，并输出 `Hello, Courier`。它使用内存传输，服务端和客户端在同一进程中运行，无需外部消息服务。
+这个教程创建一个独立 Go 应用，调用自定义的 `Hello(name)` 方法，并输出 `Hello, Courier`。它使用内存传输，服务端和客户端在同一进程中运行，无需外部消息服务。
 
-需要 Go 1.26 或以上，以及 Apache Thrift **0.25.0** 编译器；运行仓库已有示例无需编译器，生成自己的接口才需要。macOS 可通过 Homebrew 安装：
+需要 Go 1.26 或以上，以及 Apache Thrift **0.25.0** 编译器；运行仓库已有示例无需编译器，生成业务接口时需要。macOS 可通过 Homebrew 安装：
 
 ```sh
 brew install thrift
@@ -13,7 +13,7 @@ thrift -version
 
 ## 代码与进程的分工
 
-本教程按“接口 → 生成 → 实现 → 启动 → 调用”组织；生成代码不会替你实现业务，也不会自动启动服务。
+本教程按“接口 → 生成 → 实现 → 启动 → 调用”组织；生成代码提供接口与调用入口，业务实现和进程启动由应用负责。
 
 | 文件或对象 | 负责什么 | 谁需要它 |
 | --- | --- | --- |
@@ -42,13 +42,13 @@ mkdir courier-hello
 cd courier-hello
 export GOWORK=off
 go mod init example.com/courier-hello
-go get github.com/nextpkg/courier@main github.com/nextpkg/courier/transport/memory@main
+go get github.com/nextpkg/courier@v0.1.0 github.com/nextpkg/courier/transport/memory@v0.1.0
 mkdir -p idl gen
 ```
 
-`@main` 获取当前主分支；Go 会把解析后的版本写入 `go.mod`，后续构建使用该固定版本，不会每次跟随主分支变化。将 `go.mod`、`go.sum` 纳入业务项目版本控制；主动升级时再执行 `go get ...@main`。核心和各适配器可独立获取，例如 Kafka 适配器路径为 `github.com/nextpkg/courier/transport/kafka`。
+本教程固定使用 `v0.1.0`，将 `go.mod`、`go.sum` 纳入业务项目版本控制以复现依赖。升级时通过 `go get <模块路径>@<目标版本>` 显式选择版本；需要验证主分支代码时可使用 `@main`，Go 会将解析后的版本记录在 `go.mod` 中。核心和各适配器可独立获取，例如 Kafka 适配器路径为 `github.com/nextpkg/courier/transport/kafka`。
 
-`example.com/courier-hello` 只是本教程的应用模块名，可替换为业务模块名，但必须同步修改下文的 `package_prefix` 和 `gen/hello` 导入路径；框架的 import 使用 `github.com/nextpkg/courier`。后续命令都在 `courier-hello` 中运行。
+`example.com/courier-hello` 是本教程的应用模块名，可替换为业务模块名，但必须同步修改下文的 `package_prefix` 和 `gen/hello` 导入路径；框架的 import 使用 `github.com/nextpkg/courier`。后续命令都在 `courier-hello` 中运行。
 
 ## 2. 定义接口
 
@@ -64,11 +64,11 @@ service Greeter {
 IDL
 ```
 
-`Greeter` 是服务名，`Hello` 是方法名，参数与返回值都是字符串；这里声明接口，不写业务实现。
+`Greeter` 是服务名，`Hello` 是方法名，参数与返回值都是字符串；IDL 声明接口，方法实现位于 handler 中。
 
 ## 3. 生成 Go 代码
 
-在当前 `courier-hello` 目录依次执行两条命令；不要使用 Courier 仓库的 `go generate ./...`，后者只负责仓库自带示例。
+在当前 `courier-hello` 目录依次执行两条命令；Courier 仓库的 `go generate ./...` 仅用于仓库自带示例，业务接口使用以下显式路径生成。
 
 ```sh
 thrift -out gen --gen go:skip_remote,package_prefix=example.com/courier-hello/gen/ idl/hello.thrift
@@ -196,12 +196,12 @@ Hello, Courier
 程序随即退出，服务端和客户端资源均由 `defer` 关闭。最终文件结构如下：
 
 ```text
-courier-hello/              你的应用
+courier-hello/              业务应用
   go.mod
   go.sum
-  idl/hello.thrift          你维护的接口定义
+  idl/hello.thrift          应用维护的接口定义
   gen/hello/               工具生成的 Go 代码
-  handler.go               你维护的业务逻辑
+  handler.go               应用维护的业务逻辑
   main.go                  启动与调用代码
 ```
 

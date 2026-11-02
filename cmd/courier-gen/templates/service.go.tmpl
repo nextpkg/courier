@@ -1,10 +1,14 @@
+// {{.Name}}AsyncClient provides synchronous and asynchronous service methods.
+// It shares the supplied core client and does not own its lifecycle.
 type {{.Name}}AsyncClient struct { core *courier.Client; service string }
 func New{{.Name}}AsyncClient(c *courier.Client) *{{.Name}}AsyncClient { return New{{.Name}}AsyncClientFor(c,{{printf "%q" .Name}}) }
 func New{{.Name}}AsyncClientFor(c *courier.Client, service string) *{{.Name}}AsyncClient { return &{{.Name}}AsyncClient{core:c,service:service} }
 func Register{{.Name}}(s *courier.Server, handler {{.Name}}) error { return Register{{.Name}}As(s,{{printf "%q" .Name}},handler) }
 func Register{{.Name}}As(s *courier.Server, service string, handler {{.Name}}) error { return s.Register(service,New{{.Name}}Processor(handler)) }
 
-// Dial{{.Name}} opens a dedicated connection and returns its typed service client.
+// Dial{{.Name}} creates a dedicated Courier client and its typed service wrapper.
+// It prepares reply delivery without checking remote service availability.
+// ctx controls the client lifetime.
 // Close the returned connection before closing the caller-owned transport.
 // Pass at most one ClientOptions value; omitted options use core defaults.
 func Dial{{.Name}}(ctx context.Context, t courier.Transport, options ...courier.ClientOptions) (*{{.Name}}AsyncClient, *courier.Client, error) {
@@ -17,6 +21,7 @@ func Dial{{.Name}}(ctx context.Context, t courier.Transport, options ...courier.
 }
 
 // Listen{{.Name}} registers the handler and starts a dedicated server before returning.
+// ctx controls handler lifetime; keep it active while draining the server.
 // Close the returned server before closing the caller-owned transport.
 // Use explicit registration to host multiple services on one server.
 func Listen{{.Name}}(ctx context.Context, t courier.Transport, handler {{.Name}}, options ...courier.ServerOptions) (*courier.Server, error) {

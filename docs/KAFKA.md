@@ -31,7 +31,7 @@ flowchart LR
 | Orders | courier.request.Orders | courier.servers.courier.request.Orders | Orders 的全部已注册方法 |
 | Inventory | courier.request.Inventory | courier.servers.courier.request.Inventory | Inventory 的全部已注册方法 |
 
-两个独立服务加一个共享回复域，共 **3 个业务 topic**。topic 数随独立服务部署单元和回复权限域增长，与方法数、调用数、客户端数无关。Kafka 自己的内部 topic 不计入业务 topic 预算。topic 与 partition 的容量应按 Broker/controller 资源制定预算。
+两个独立服务加一个共享回复域，共 **3 个业务 topic**。topic 数随独立服务部署单元和回复权限域增长，与方法数、调用数、客户端数无关。Kafka 内部 topic 不计入业务 topic 预算。topic 与 partition 的容量应按 Broker/controller 资源制定预算。
 
 `RequestTopics map[string]string` 可以改变物理映射。若将 Orders 和 Inventory 都映射到 `commerce.requests`，每个消费副本必须同时注册这两个服务。适配器在 `Server.Start` 时检查完整注册集合，拒绝仅注册其中一项的副本。所有进程必须使用一致的映射与 Prefix；这不是跨进程配置一致性协议。默认每服务独立 topic 可避免把 A 请求竞争分配给只实现 B 的副本。更新方法也需要正常的兼容发布策略，旧副本收到新方法会返回 method_not_found。
 
@@ -42,7 +42,7 @@ flowchart LR
 1. 每个 `courier.Client` 生成独立随机 session，并从配置的 `ReplyPartitions` 选择一个 partition。
 2. 原生 ListOffsets 查询该 partition 当前的具体结束 offset；随后创建从该数字 offset 开始的直接 reader 并验证连接，再返回客户端。
 3. 每个请求记录原始回复 topic、partition、session 和 request ID；服务器按这些字段回复。
-4. Reader 不加入共享消费组。它读到该 partition 的所有后续回复，先过滤 session/route，核心再匹配 request ID、service、method；未知、迟到、重复回复不会完成别的调用。
+4. Reader 不加入共享消费组。它读到该 partition 的所有后续回复，先过滤 session/route，核心再匹配 request ID、service、method；未知、迟到和重复回复不会匹配其他调用。
 
 不能把这些 reader 放到同一个共享消费组，否则回复可能被另一个客户端读走。多个生成的服务客户端应共享同一个 `courier.Client`，这样只有一个 reader；同一进程每创建一个独立 core client 都会增加一个 session/reader。
 
@@ -79,7 +79,7 @@ flowchart LR
 | StartupTimeout | 15 s | 启动连接、reader、消费组准备的等待上限 |
 | RebalanceTimeout | 默认 150 s | 自动按整个 Window 的 worker 批数计算，见下式 |
 
-重平衡预算必须严格大于 `ceil(Window/Workers) × (ProcessingTimeout + OperationTimeout) + OperationTimeout`，默认再加 5 秒余量。这样覆盖排队的所有 handler 批次、回复确认和最终提交；不是只计算一个 handler。部署必须将该预算与 Broker group/max-poll 策略匹配；缩小 window 和单次处理期限可缩短排空时间。忽略 context 的业务 handler 无法被 Go 强制终止，可能妨碍关闭与重平衡；Close 的 context 仅限制调用方等待。
+重平衡预算必须严格大于 `ceil(Window/Workers) × (ProcessingTimeout + OperationTimeout) + OperationTimeout`，默认再加 5 秒余量。该预算覆盖排队的所有 handler 批次、回复确认和最终提交。部署必须将该预算与 Broker group/max-poll 策略匹配；缩小 window 和单次处理期限可缩短排空时间。忽略 context 的业务 handler 无法被 Go 强制终止，可能妨碍关闭与重平衡；Close 的 context 仅限制调用方等待。
 
 SDK 同时限制缓冲字节、单连接读取 32 MiB、单次 fetch 数量及解压批次大小；fetch 字节目标最多 24 MiB，Kafka 为读取首个大批次可能超过 fetch 目标，仍受读取/解压上限约束。这些是局部资源上限，不是整进程 RSS 保证。各 reader、topic consumer 和 transport 会分别持有 SDK 连接/缓冲，部署应限制总实例数。metadata 缓存 30 秒；外部扩容的预算检查可能在刷新时才反映，不能用它替代 Broker 侧预算治理。
 

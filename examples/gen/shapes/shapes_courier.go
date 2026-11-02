@@ -8,6 +8,8 @@ import (
 	courier "github.com/nextpkg/courier"
 )
 
+// ShapesAsyncClient provides synchronous and asynchronous service methods.
+// It shares the supplied core client and does not own its lifecycle.
 type ShapesAsyncClient struct {
 	core    *courier.Client
 	service string
@@ -26,7 +28,9 @@ func RegisterShapesAs(s *courier.Server, service string, handler Shapes) error {
 	return s.Register(service, NewShapesProcessor(handler))
 }
 
-// DialShapes opens a dedicated connection and returns its typed service client.
+// DialShapes creates a dedicated Courier client and its typed service wrapper.
+// It prepares reply delivery without checking remote service availability.
+// ctx controls the client lifetime.
 // Close the returned connection before closing the caller-owned transport.
 // Pass at most one ClientOptions value; omitted options use core defaults.
 func DialShapes(ctx context.Context, t courier.Transport, options ...courier.ClientOptions) (*ShapesAsyncClient, *courier.Client, error) {
@@ -45,6 +49,7 @@ func DialShapes(ctx context.Context, t courier.Transport, options ...courier.Cli
 }
 
 // ListenShapes registers the handler and starts a dedicated server before returning.
+// ctx controls handler lifetime; keep it active while draining the server.
 // Close the returned server before closing the caller-owned transport.
 // Use explicit registration to host multiple services on one server.
 func ListenShapes(ctx context.Context, t courier.Transport, handler Shapes, options ...courier.ServerOptions) (*courier.Server, error) {
@@ -67,6 +72,8 @@ func ListenShapes(ctx context.Context, t courier.Transport, handler Shapes, opti
 	}
 	return server, nil
 }
+
+// PingAsync submits a call and returns its future; ctx controls the call lifetime.
 func (_courierClient *ShapesAsyncClient) PingAsync(ctx context.Context) (*courier.Future[struct{}], error) {
 	var _args0 ShapesPingArgs
 	var _result2 ShapesPingResult
@@ -75,6 +82,8 @@ func (_courierClient *ShapesAsyncClient) PingAsync(ctx context.Context) (*courie
 		}{}, nil
 	})
 }
+
+// Ping waits for the remote result or call error.
 func (_courierClient *ShapesAsyncClient) Ping(ctx context.Context) error {
 	f, err := _courierClient.PingAsync(ctx)
 	if err != nil {
@@ -83,6 +92,8 @@ func (_courierClient *ShapesAsyncClient) Ping(ctx context.Context) error {
 	_, err = f.Await(ctx)
 	return err
 }
+
+// CheckAsync submits a call and returns its future; ctx controls the call lifetime.
 func (_courierClient *ShapesAsyncClient) CheckAsync(ctx context.Context, fail bool) (*courier.Future[struct{}], error) {
 	var _args3 ShapesCheckArgs
 	_args3.Fail = fail
@@ -97,6 +108,8 @@ func (_courierClient *ShapesAsyncClient) CheckAsync(ctx context.Context, fail bo
 		}{}, nil
 	})
 }
+
+// Check waits for the remote result or call error.
 func (_courierClient *ShapesAsyncClient) Check(ctx context.Context, fail bool) error {
 	f, err := _courierClient.CheckAsync(ctx, fail)
 	if err != nil {
@@ -105,6 +118,8 @@ func (_courierClient *ShapesAsyncClient) Check(ctx context.Context, fail bool) e
 	_, err = f.Await(ctx)
 	return err
 }
+
+// EchoAsync submits a call and returns its future; ctx controls the call lifetime.
 func (_courierClient *ShapesAsyncClient) EchoAsync(ctx context.Context, data []byte) (*courier.Future[[]byte], error) {
 	var _args6 ShapesEchoArgs
 	_args6.Data = data
@@ -113,6 +128,8 @@ func (_courierClient *ShapesAsyncClient) EchoAsync(ctx context.Context, data []b
 		return _result8.GetSuccess(), nil
 	})
 }
+
+// Echo waits for the remote result or call error.
 func (_courierClient *ShapesAsyncClient) Echo(ctx context.Context, data []byte) ([]byte, error) {
 	f, err := _courierClient.EchoAsync(ctx, data)
 	if err != nil {
@@ -121,6 +138,8 @@ func (_courierClient *ShapesAsyncClient) Echo(ctx context.Context, data []byte) 
 	}
 	return f.Await(ctx)
 }
+
+// NestAsync submits a call and returns its future; ctx controls the call lifetime.
 func (_courierClient *ShapesAsyncClient) NestAsync(ctx context.Context, values map[string][]int32) (*courier.Future[map[string][]int32], error) {
 	var _args9 ShapesNestArgs
 	_args9.Values = values
@@ -129,6 +148,8 @@ func (_courierClient *ShapesAsyncClient) NestAsync(ctx context.Context, values m
 		return _result11.GetSuccess(), nil
 	})
 }
+
+// Nest waits for the remote result or call error.
 func (_courierClient *ShapesAsyncClient) Nest(ctx context.Context, values map[string][]int32) (map[string][]int32, error) {
 	f, err := _courierClient.NestAsync(ctx, values)
 	if err != nil {

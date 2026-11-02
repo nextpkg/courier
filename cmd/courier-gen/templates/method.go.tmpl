@@ -1,7 +1,9 @@
+// {{.Name}}Async submits a call and returns its future; ctx controls the call lifetime.
 func ({{.Receiver}} *{{.Service}}AsyncClient) {{.Name}}Async{{.Params}} (*courier.Future[{{.ValueType}}], error) {
 {{.Setup}}return courier.Invoke[{{.ValueType}}]({{.Context}}, {{.Receiver}}.core, {{.Receiver}}.service, {{.WireMethod}}, {{.Request}}, {{.Response}}, func(){{.ResultSignature}} {
 {{.Unwrap}}})
 }
+// {{.Name}} waits for the remote result or call error.
 func ({{.Receiver}} *{{.Service}}AsyncClient) {{.Name}}{{.Params}} {{if .Void}}error{{else}}({{.ValueType}}, error){{end}} {
     {{.Future}}, {{.Error}} := {{.Receiver}}.{{.Name}}Async({{.Arguments}})
     if {{.Error}} != nil {

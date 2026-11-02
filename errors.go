@@ -13,6 +13,8 @@ var (
 	ErrNoResponders = errors.New("courier: no responders")
 )
 
+// RPCError reports a remote framework failure, distinct from an IDL business exception.
+// Is maps known codes to the corresponding sentinel or context error.
 type RPCError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`

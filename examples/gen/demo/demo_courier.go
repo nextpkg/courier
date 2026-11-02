@@ -9,6 +9,8 @@ import (
 	courier "github.com/nextpkg/courier"
 )
 
+// InventoryAsyncClient provides synchronous and asynchronous service methods.
+// It shares the supplied core client and does not own its lifecycle.
 type InventoryAsyncClient struct {
 	core    *courier.Client
 	service string
@@ -27,7 +29,9 @@ func RegisterInventoryAs(s *courier.Server, service string, handler Inventory) e
 	return s.Register(service, NewInventoryProcessor(handler))
 }
 
-// DialInventory opens a dedicated connection and returns its typed service client.
+// DialInventory creates a dedicated Courier client and its typed service wrapper.
+// It prepares reply delivery without checking remote service availability.
+// ctx controls the client lifetime.
 // Close the returned connection before closing the caller-owned transport.
 // Pass at most one ClientOptions value; omitted options use core defaults.
 func DialInventory(ctx context.Context, t courier.Transport, options ...courier.ClientOptions) (*InventoryAsyncClient, *courier.Client, error) {
@@ -46,6 +50,7 @@ func DialInventory(ctx context.Context, t courier.Transport, options ...courier.
 }
 
 // ListenInventory registers the handler and starts a dedicated server before returning.
+// ctx controls handler lifetime; keep it active while draining the server.
 // Close the returned server before closing the caller-owned transport.
 // Use explicit registration to host multiple services on one server.
 func ListenInventory(ctx context.Context, t courier.Transport, handler Inventory, options ...courier.ServerOptions) (*courier.Server, error) {
@@ -68,6 +73,8 @@ func ListenInventory(ctx context.Context, t courier.Transport, handler Inventory
 	}
 	return server, nil
 }
+
+// CountAsync submits a call and returns its future; ctx controls the call lifetime.
 func (_courierClient *InventoryAsyncClient) CountAsync(ctx context.Context, id string) (*courier.Future[int64], error) {
 	var _args22 InventoryCountArgs
 	_args22.ID = id
@@ -76,6 +83,8 @@ func (_courierClient *InventoryAsyncClient) CountAsync(ctx context.Context, id s
 		return _result24.GetSuccess(), nil
 	})
 }
+
+// Count waits for the remote result or call error.
 func (_courierClient *InventoryAsyncClient) Count(ctx context.Context, id string) (int64, error) {
 	f, err := _courierClient.CountAsync(ctx, id)
 	if err != nil {
@@ -84,6 +93,8 @@ func (_courierClient *InventoryAsyncClient) Count(ctx context.Context, id string
 	}
 	return f.Await(ctx)
 }
+
+// ReserveAsync submits a call and returns its future; ctx controls the call lifetime.
 func (_courierClient *InventoryAsyncClient) ReserveAsync(ctx context.Context, id string) (*courier.Future[*Item], error) {
 	var _args25 InventoryReserveArgs
 	_args25.ID = id
@@ -95,6 +106,8 @@ func (_courierClient *InventoryAsyncClient) ReserveAsync(ctx context.Context, id
 		return nil, thrift.NewTApplicationException(thrift.MISSING_RESULT, "Reserve failed: unknown result")
 	})
 }
+
+// Reserve waits for the remote result or call error.
 func (_courierClient *InventoryAsyncClient) Reserve(ctx context.Context, id string) (*Item, error) {
 	f, err := _courierClient.ReserveAsync(ctx, id)
 	if err != nil {
@@ -104,6 +117,8 @@ func (_courierClient *InventoryAsyncClient) Reserve(ctx context.Context, id stri
 	return f.Await(ctx)
 }
 
+// OrdersAsyncClient provides synchronous and asynchronous service methods.
+// It shares the supplied core client and does not own its lifecycle.
 type OrdersAsyncClient struct {
 	core    *courier.Client
 	service string
@@ -122,7 +137,9 @@ func RegisterOrdersAs(s *courier.Server, service string, handler Orders) error {
 	return s.Register(service, NewOrdersProcessor(handler))
 }
 
-// DialOrders opens a dedicated connection and returns its typed service client.
+// DialOrders creates a dedicated Courier client and its typed service wrapper.
+// It prepares reply delivery without checking remote service availability.
+// ctx controls the client lifetime.
 // Close the returned connection before closing the caller-owned transport.
 // Pass at most one ClientOptions value; omitted options use core defaults.
 func DialOrders(ctx context.Context, t courier.Transport, options ...courier.ClientOptions) (*OrdersAsyncClient, *courier.Client, error) {
@@ -141,6 +158,7 @@ func DialOrders(ctx context.Context, t courier.Transport, options ...courier.Cli
 }
 
 // ListenOrders registers the handler and starts a dedicated server before returning.
+// ctx controls handler lifetime; keep it active while draining the server.
 // Close the returned server before closing the caller-owned transport.
 // Use explicit registration to host multiple services on one server.
 func ListenOrders(ctx context.Context, t courier.Transport, handler Orders, options ...courier.ServerOptions) (*courier.Server, error) {
@@ -163,6 +181,8 @@ func ListenOrders(ctx context.Context, t courier.Transport, handler Orders, opti
 	}
 	return server, nil
 }
+
+// GetAsync submits a call and returns its future; ctx controls the call lifetime.
 func (_courierClient *OrdersAsyncClient) GetAsync(ctx context.Context, id string, delay_ms int32) (*courier.Future[*Item], error) {
 	var _args2 OrdersGetArgs
 	_args2.ID = id
@@ -179,6 +199,8 @@ func (_courierClient *OrdersAsyncClient) GetAsync(ctx context.Context, id string
 		return nil, thrift.NewTApplicationException(thrift.MISSING_RESULT, "Get failed: unknown result")
 	})
 }
+
+// Get waits for the remote result or call error.
 func (_courierClient *OrdersAsyncClient) Get(ctx context.Context, id string, delay_ms int32) (*Item, error) {
 	f, err := _courierClient.GetAsync(ctx, id, delay_ms)
 	if err != nil {
@@ -187,6 +209,8 @@ func (_courierClient *OrdersAsyncClient) Get(ctx context.Context, id string, del
 	}
 	return f.Await(ctx)
 }
+
+// ListAsync submits a call and returns its future; ctx controls the call lifetime.
 func (_courierClient *OrdersAsyncClient) ListAsync(ctx context.Context, ids []string) (*courier.Future[[]*Item], error) {
 	var _args6 OrdersListArgs
 	_args6.Ids = ids
@@ -195,6 +219,8 @@ func (_courierClient *OrdersAsyncClient) ListAsync(ctx context.Context, ids []st
 		return _result8.GetSuccess(), nil
 	})
 }
+
+// List waits for the remote result or call error.
 func (_courierClient *OrdersAsyncClient) List(ctx context.Context, ids []string) ([]*Item, error) {
 	f, err := _courierClient.ListAsync(ctx, ids)
 	if err != nil {
@@ -203,6 +229,8 @@ func (_courierClient *OrdersAsyncClient) List(ctx context.Context, ids []string)
 	}
 	return f.Await(ctx)
 }
+
+// PingAsync submits a call and returns its future; ctx controls the call lifetime.
 func (_courierClient *OrdersAsyncClient) PingAsync(ctx context.Context) (*courier.Future[struct{}], error) {
 	var _args9 OrdersPingArgs
 	var _result11 OrdersPingResult
@@ -211,6 +239,8 @@ func (_courierClient *OrdersAsyncClient) PingAsync(ctx context.Context) (*courie
 		}{}, nil
 	})
 }
+
+// Ping waits for the remote result or call error.
 func (_courierClient *OrdersAsyncClient) Ping(ctx context.Context) error {
 	f, err := _courierClient.PingAsync(ctx)
 	if err != nil {

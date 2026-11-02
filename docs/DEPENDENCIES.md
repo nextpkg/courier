@@ -49,9 +49,9 @@
 
 ## 模块获取与仓库内开发
 
-核心模块为 `github.com/nextpkg/courier`，适配器模块为 `github.com/nextpkg/courier/transport/{memory,nats,kafka}`；业务应用只获取需要的模块，使用 `go get <模块路径>@main` 解析并记录实际版本，完整命令见 [接入教程](GETTING-STARTED.md)。
+核心模块为 `github.com/nextpkg/courier`，适配器模块为 `github.com/nextpkg/courier/transport/{memory,nats,kafka}`；业务应用只获取需要的模块，使用 `go get <模块路径>@v0.1.0` 获取已发布版本，完整命令见 [接入教程](GETTING-STARTED.md)。
 
-子模块声明真实的核心版本依赖；仓库内的相对 `replace` 和根目录 `go.work` 方便联调，不要求下游应用使用同样的目录布局。修改共享接口时需同步验证全部模块，发布子模块前确保其依赖版本已可从远端获取。私有仓库依赖需要 Git 读取权限及匹配的 `GOPRIVATE`，生产构建应使用已提交的 `go.mod/go.sum`，而不是每次更新至主分支。
+子模块声明真实的核心版本依赖；仓库内的相对 `replace` 和根目录 `go.work` 用于本地联调，不要求下游应用使用同样的目录布局。修改共享接口时需同步验证全部模块，发布子模块前确保其依赖版本已可从远端获取。私有仓库依赖需要 Git 读取权限及匹配的 `GOPRIVATE`，生产构建应使用已提交的 `go.mod/go.sum`，而不是每次更新至主分支。
 
 ## 生成命令
 

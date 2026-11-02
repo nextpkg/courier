@@ -11,6 +11,9 @@ import (
 	"github.com/apache/thrift/lib/go/thrift"
 )
 
+// ClientOptions configures per-client admission, publishing, and deadlines.
+// Zero fields select defaults: 256 in-flight calls, 4 publishers, 1 MiB frames,
+// and a 30-second timeout for calls without an explicit context deadline.
 type ClientOptions struct {
 	MaxInFlight    int
 	PublishWorkers int
@@ -18,6 +21,8 @@ type ClientOptions struct {
 	DefaultTimeout time.Duration
 }
 
+// Client owns one reply inbox and can be shared by generated service clients.
+// It does not own the Transport passed to NewClient.
 type Client struct {
 	t       Transport
 	inbox   Inbox
@@ -56,6 +61,9 @@ func randomID() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
+// NewClient opens the reply inbox before accepting calls.
+// ctx controls the client lifetime; canceling it terminates pending calls.
+// Construction does not verify that a remote service is available.
 func NewClient(ctx context.Context, t Transport, opts ClientOptions) (*Client, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -115,6 +123,8 @@ func NewClient(ctx context.Context, t Transport, opts ClientOptions) (*Client, e
 	return c, nil
 }
 
+// Submit serializes a request and admits it to the bounded publishing queue.
+// ctx controls the call lifetime; successful admission does not confirm delivery.
 func (c *Client) Submit(ctx context.Context, service, method string, args thrift.TStruct) (*Call, error) {
 	if service == "" || method == "" {
 		return nil, fmt.Errorf("courier: empty service or method")
@@ -249,6 +259,9 @@ func (c *Client) abort() {
 	}
 	c.cancel()
 }
+
+// Close rejects new calls, terminates pending calls, and closes the reply inbox.
+// ctx bounds cleanup; Close does not close the caller-owned transport.
 func (c *Client) Close(ctx context.Context) error {
 	c.abort()
 	err := c.inbox.Close(ctx)
@@ -261,6 +274,9 @@ func (c *Client) Close(ctx context.Context) error {
 }
 func (x *Call) ID() string            { return x.id }
 func (x *Call) Done() <-chan struct{} { return x.done }
+
+// Sent waits for the transport publication result, not business completion.
+// Canceling ctx ends this wait without canceling the submitted call.
 func (x *Call) Sent(ctx context.Context) error {
 	select {
 	case <-x.sent:
@@ -269,6 +285,9 @@ func (x *Call) Sent(ctx context.Context) error {
 		return ctx.Err()
 	}
 }
+
+// Await waits for the response payload or call error.
+// Canceling ctx ends only this wait. The returned payload must not be mutated.
 func (x *Call) Await(ctx context.Context) ([]byte, error) {
 	select {
 	case <-x.done:

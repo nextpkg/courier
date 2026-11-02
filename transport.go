@@ -1,3 +1,5 @@
+// Package courier provides typed request-reply RPC over caller-owned message transports.
+// Thrift processors dispatch service methods; Client correlates replies and bounds in-flight calls.
 package courier
 
 import "context"
@@ -12,11 +14,16 @@ type Route struct {
 // produced, and the adapter must apply its documented delivery failure policy.
 type Handler func(context.Context, []byte) ([]byte, error)
 
+// Subscription owns message delivery and releases it on Close.
+// Drain behavior is transport-specific; the context limits the wait for closure.
 type Subscription interface{ Close(context.Context) error }
+
+// Inbox receives replies for one client session and exposes its return route.
 type Inbox interface {
 	Subscription
 	Route() Route
-	// Done closes when reply delivery ends permanently, including broker close.
+	// Done closes when reply delivery ends permanently. A recoverable broker
+	// disconnect does not necessarily close Done.
 	Done() <-chan struct{}
 }
 

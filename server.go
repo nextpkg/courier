@@ -11,10 +11,14 @@ import (
 	"github.com/apache/thrift/lib/go/thrift"
 )
 
+// ServerOptions sets per-server handler concurrency, frame size, and logging.
+// Zero values select 32 concurrent handlers, 1 MiB frames, and slog.Default.
 type ServerOptions struct {
 	MaxConcurrent, MaxFrameBytes int
 	Logger                       *slog.Logger
 }
+
+// Server dispatches registered Thrift services over a caller-owned transport.
 type Server struct {
 	t        Transport
 	opts     ServerOptions
@@ -28,6 +32,7 @@ type Server struct {
 	cancel   context.CancelFunc
 }
 
+// NewServer creates a server without starting subscriptions.
 func NewServer(t Transport, opts ServerOptions) (*Server, error) {
 	if t == nil {
 		return nil, fmt.Errorf("courier: nil transport")
@@ -46,6 +51,8 @@ func NewServer(t Transport, opts ServerOptions) (*Server, error) {
 	}
 	return &Server{t: t, opts: opts, services: make(map[string]thrift.TProcessor), slots: make(chan struct{}, opts.MaxConcurrent)}, nil
 }
+
+// Register binds a service name to a processor before Start. Duplicate names are rejected.
 func (s *Server) Register(service string, p thrift.TProcessor) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -62,8 +69,10 @@ func (s *Server) Register(service string, p thrift.TProcessor) error {
 	return nil
 }
 
-// Start installs all subscriptions before returning. On failure already-opened
-// subscriptions are closed, so readiness is never partially advertised.
+// Start returns successfully after all service subscriptions are ready.
+// Subscriptions may receive requests during setup; on failure, Start cancels
+// processing and attempts to close subscriptions already opened.
+// ctx controls processing lifetime; canceling it interrupts in-flight handlers.
 func (s *Server) Start(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -106,6 +115,9 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	return nil
 }
+
+// Serve starts the server, waits for ctx cancellation, and closes subscriptions.
+// For graceful draining, use Start and Close without first canceling the Start context.
 func (s *Server) Serve(ctx context.Context) error {
 	if err := s.Start(ctx); err != nil {
 		return err
@@ -116,8 +128,9 @@ func (s *Server) Serve(ctx context.Context) error {
 	return s.Close(stop)
 }
 
-// Close lets subscriptions drain before canceling their shared context.
-// Canceling the Start context remains an immediate shutdown signal.
+// Close closes subscriptions before canceling their shared processing context.
+// Draining follows the transport policy and is bounded by ctx. The transport
+// remains caller-owned; canceling the Start context interrupts processing immediately.
 func (s *Server) Close(ctx context.Context) error {
 	s.mu.Lock()
 	s.closed = true
