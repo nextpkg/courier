@@ -1,0 +1,300 @@
+package courier
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/apache/thrift/lib/go/thrift"
+)
+
+type ClientOptions struct {
+	MaxInFlight    int
+	PublishWorkers int
+	MaxFrameBytes  int
+	DefaultTimeout time.Duration
+}
+
+type Client struct {
+	t       Transport
+	inbox   Inbox
+	opts    ClientOptions
+	session string
+	ctx     context.Context
+	cancel  context.CancelFunc
+	mu      sync.Mutex
+	closed  bool
+	pending map[string]*Call
+	jobs    chan *Call
+	workers sync.WaitGroup
+	done    chan struct{}
+}
+
+// Call is the raw asynchronous result. Generated clients normally return Future.
+type Call struct {
+	id, service, method string
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	stop                func() bool
+	data                []byte
+	done                chan struct{}
+	sent                chan struct{}
+	sentOnce            sync.Once
+	sendErr             error
+	payload             []byte
+	err                 error
+}
+
+func randomID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
+}
+
+func NewClient(ctx context.Context, t Transport, opts ClientOptions) (*Client, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if t == nil {
+		return nil, fmt.Errorf("courier: nil transport")
+	}
+	if opts.MaxInFlight == 0 {
+		opts.MaxInFlight = 256
+	}
+	if opts.PublishWorkers == 0 {
+		opts.PublishWorkers = 4
+	}
+	if opts.MaxFrameBytes == 0 {
+		opts.MaxFrameBytes = DefaultMaxFrameBytes
+	}
+	if opts.DefaultTimeout == 0 {
+		opts.DefaultTimeout = 30 * time.Second
+	}
+	if opts.MaxInFlight < 1 || opts.PublishWorkers < 1 || opts.MaxFrameBytes < 512 || opts.MaxFrameBytes > 1<<30 || opts.DefaultTimeout < 0 {
+		return nil, fmt.Errorf("courier: invalid client options")
+	}
+	session, err := randomID()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	c := &Client{t: t, opts: opts, session: session, ctx: ctx, cancel: cancel, pending: make(map[string]*Call), jobs: make(chan *Call, opts.MaxInFlight), done: make(chan struct{})}
+	c.inbox, err = t.OpenInbox(ctx, session, c.receive)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	for i := 0; i < opts.PublishWorkers; i++ {
+		c.workers.Add(1)
+		go c.publishLoop()
+	}
+	go func() {
+		c.workers.Wait()
+		for {
+			select {
+			case x := <-c.jobs:
+				x.data = nil
+			default:
+				close(c.done)
+				return
+			}
+		}
+	}()
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-c.inbox.Done():
+		}
+		c.abort()
+	}()
+	return c, nil
+}
+
+func (c *Client) Submit(ctx context.Context, service, method string, args thrift.TStruct) (*Call, error) {
+	if service == "" || method == "" {
+		return nil, fmt.Errorf("courier: empty service or method")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.opts.DefaultTimeout)
+		return c.submit(ctx, cancel, service, method, args)
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	return c.submit(ctx, cancel, service, method, args)
+}
+func (c *Client) submit(ctx context.Context, cancel context.CancelFunc, service, method string, args thrift.TStruct) (*Call, error) {
+	payload, err := encodeCall(ctx, method, args, c.opts.MaxFrameBytes)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	id, err := randomID()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	deadline, _ := ctx.Deadline()
+	data, err := EncodeEnvelope(Envelope{Version: ProtocolVersion, Kind: "request", Service: service, Method: method, ID: id, Session: c.session, Deadline: deadline.UnixNano(), Reply: c.inbox.Route(), Payload: payload}, c.opts.MaxFrameBytes)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	x := &Call{id: id, service: service, method: method, ctx: ctx, cancel: cancel, data: data, done: make(chan struct{}), sent: make(chan struct{})}
+	c.mu.Lock()
+	if c.closed || c.ctx.Err() != nil {
+		c.mu.Unlock()
+		cancel()
+		return nil, ErrClosed
+	}
+	if len(c.pending) >= c.opts.MaxInFlight {
+		c.mu.Unlock()
+		cancel()
+		return nil, ErrOverloaded
+	}
+	c.pending[id] = x
+	x.stop = context.AfterFunc(ctx, func() { c.finish(id, nil, ctx.Err()) })
+	select {
+	case c.jobs <- x:
+		c.mu.Unlock()
+		return x, nil
+	default:
+		delete(c.pending, id)
+		c.mu.Unlock()
+		x.stop()
+		cancel()
+		return nil, ErrOverloaded
+	}
+}
+func (c *Client) publishLoop() {
+	defer c.workers.Done()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case x := <-c.jobs:
+			if x.ctx.Err() != nil {
+				x.data = nil
+				continue
+			}
+			err := c.t.Send(x.ctx, x.service, c.inbox.Route(), x.data)
+			x.data = nil
+			if err != nil {
+				err = &TransportError{Cause: err}
+			}
+			x.markSent(err)
+			if err != nil {
+				c.finish(x.id, nil, err)
+			}
+		}
+	}
+}
+func (x *Call) markSent(err error) { x.sentOnce.Do(func() { x.sendErr = err; close(x.sent) }) }
+func (c *Client) receive(data []byte) {
+	e, err := DecodeEnvelope(data, c.opts.MaxFrameBytes)
+	if err != nil || e.Kind != "response" || e.Session != c.session {
+		return
+	}
+	c.mu.Lock()
+	x := c.pending[e.ID]
+	valid := x != nil && x.service == e.Service && x.method == e.Method
+	c.mu.Unlock()
+	if !valid {
+		return
+	}
+	// A valid reply (including broker errors) proves successful publication.
+	x.markSent(nil)
+	if e.Error != nil {
+		c.finish(e.ID, nil, e.Error)
+	} else {
+		c.finish(e.ID, e.Payload, nil)
+	}
+}
+func (c *Client) finish(id string, payload []byte, err error) {
+	c.mu.Lock()
+	x := c.pending[id]
+	if x != nil {
+		delete(c.pending, id)
+	}
+	c.mu.Unlock()
+	if x == nil {
+		return
+	}
+	x.stop()
+	x.payload = payload
+	x.err = err
+	// If cancellation wins before Send returns, delivery is indeterminate.
+	x.markSent(err)
+	close(x.done)
+	x.cancel()
+}
+func (c *Client) Pending() int { c.mu.Lock(); defer c.mu.Unlock(); return len(c.pending) }
+func (c *Client) abort() {
+	c.mu.Lock()
+	c.closed = true
+	ids := make([]string, 0, len(c.pending))
+	for id := range c.pending {
+		ids = append(ids, id)
+	}
+	c.mu.Unlock()
+	for _, id := range ids {
+		c.finish(id, nil, ErrClosed)
+	}
+	c.cancel()
+}
+func (c *Client) Close(ctx context.Context) error {
+	c.abort()
+	err := c.inbox.Close(ctx)
+	select {
+	case <-c.done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+func (x *Call) ID() string            { return x.id }
+func (x *Call) Done() <-chan struct{} { return x.done }
+func (x *Call) Sent(ctx context.Context) error {
+	select {
+	case <-x.sent:
+		return x.sendErr
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+func (x *Call) Await(ctx context.Context) ([]byte, error) {
+	select {
+	case <-x.done:
+		return x.payload, x.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// ThriftClient adapts the official synchronous generated client to this core.
+type ThriftClient struct {
+	Client  *Client
+	Service string
+}
+
+func (t ThriftClient) Call(ctx context.Context, method string, args, result thrift.TStruct) (thrift.ResponseMeta, error) {
+	if nilStruct(result) {
+		return thrift.ResponseMeta{}, fmt.Errorf("courier: oneway calls are not supported")
+	}
+	x, err := t.Client.Submit(ctx, t.Service, method, args)
+	if err != nil {
+		return thrift.ResponseMeta{}, err
+	}
+	payload, err := x.Await(ctx)
+	if err != nil {
+		return thrift.ResponseMeta{}, err
+	}
+	return thrift.ResponseMeta{}, decodeResult(ctx, method, payload, result, t.Client.opts.MaxFrameBytes)
+}

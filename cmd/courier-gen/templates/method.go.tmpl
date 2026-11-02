@@ -1,0 +1,13 @@
+func ({{.Receiver}} *{{.Service}}AsyncClient) {{.Name}}Async{{.Params}} (*courier.Future[{{.ValueType}}], error) {
+{{.Setup}}return courier.Invoke[{{.ValueType}}]({{.Context}}, {{.Receiver}}.core, {{.Receiver}}.service, {{.WireMethod}}, {{.Request}}, {{.Response}}, func(){{.ResultSignature}} {
+{{.Unwrap}}})
+}
+func ({{.Receiver}} *{{.Service}}AsyncClient) {{.Name}}{{.Params}} {{if .Void}}error{{else}}({{.ValueType}}, error){{end}} {
+    {{.Future}}, {{.Error}} := {{.Receiver}}.{{.Name}}Async({{.Arguments}})
+    if {{.Error}} != nil {
+        {{if .Void}}return {{.Error}}{{else}}var {{.Zero}} {{.ValueType}}
+        return {{.Zero}}, {{.Error}}{{end}}
+    }
+    {{if .Void}}_, {{.Error}} = {{.Future}}.Await({{.Context}})
+    return {{.Error}}{{else}}return {{.Future}}.Await({{.Context}}){{end}}
+}

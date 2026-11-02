@@ -1,0 +1,9 @@
+go 1.26.0
+
+use (
+	.
+	./examples
+	./transport/kafka
+	./transport/memory
+	./transport/nats
+)
