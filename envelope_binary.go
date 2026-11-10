@@ -22,19 +22,19 @@ func encodeBinaryEnvelope(e Envelope, limit int) ([]byte, error) {
 		return nil, err
 	}
 	w := binwrite.Writer{Protocol: p, Context: context.Background()}
-	binwrite.Value(&w, envelopeFieldVersion, int32(e.Version), binwrite.Int32Field, (*binwrite.Writer).Int32)
-	binwrite.Value(&w, envelopeFieldKind, e.Kind, binwrite.StringField, (*binwrite.Writer).String)
-	binwrite.Value(&w, envelopeFieldService, e.Service, binwrite.StringField, (*binwrite.Writer).String)
-	binwrite.Value(&w, envelopeFieldMethod, e.Method, binwrite.StringField, (*binwrite.Writer).String)
-	binwrite.Value(&w, envelopeFieldID, e.ID, binwrite.StringField, (*binwrite.Writer).String)
-	binwrite.Value(&w, envelopeFieldSession, e.Session, binwrite.StringField, (*binwrite.Writer).String)
-	binwrite.Value(&w, envelopeFieldDeadline, e.Deadline, binwrite.Int64Field, (*binwrite.Writer).Int64)
-	binwrite.Value(&w, envelopeFieldReplyTopic, e.Reply.Topic, binwrite.StringField, (*binwrite.Writer).String)
-	binwrite.Value(&w, envelopeFieldReplyPartition, e.Reply.Partition, binwrite.Int32Field, (*binwrite.Writer).Int32)
-	binwrite.Value(&w, envelopeFieldPayload, e.Payload, binwrite.StringField, (*binwrite.Writer).Binary)
+	w.Int32Field(envelopeFieldVersion, int32(e.Version))
+	w.StringField(envelopeFieldKind, e.Kind)
+	w.StringField(envelopeFieldService, e.Service)
+	w.StringField(envelopeFieldMethod, e.Method)
+	w.StringField(envelopeFieldID, e.ID)
+	w.StringField(envelopeFieldSession, e.Session)
+	w.Int64Field(envelopeFieldDeadline, e.Deadline)
+	w.StringField(envelopeFieldReplyTopic, e.Reply.Topic)
+	w.Int32Field(envelopeFieldReplyPartition, e.Reply.Partition)
+	w.BinaryField(envelopeFieldPayload, e.Payload)
 	if e.Error != nil {
-		binwrite.Value(&w, envelopeFieldErrorCode, e.Error.Code, binwrite.StringField, (*binwrite.Writer).String)
-		binwrite.Value(&w, envelopeFieldErrorMessage, e.Error.Message, binwrite.StringField, (*binwrite.Writer).String)
+		w.StringField(envelopeFieldErrorCode, e.Error.Code)
+		w.StringField(envelopeFieldErrorMessage, e.Error.Message)
 	}
 	w.Stop()
 	if w.Err != nil {
