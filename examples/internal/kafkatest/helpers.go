@@ -1,23 +1,20 @@
 //go:build integration
 
-package examples_test
+package kafkatest
 
 import (
 	"context"
 	"fmt"
-	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/brokeradmin"
-	"github.com/nextpkg/courier/examples/contract"
 	transport "github.com/nextpkg/courier/transport/kafka"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
 
-func kafkaBrokers(t *testing.T) []string {
+func Brokers(t *testing.T) []string {
 	t.Helper()
 	u := os.Getenv("KAFKA_BROKERS")
 	if u == "" {
@@ -25,16 +22,18 @@ func kafkaBrokers(t *testing.T) []string {
 	}
 	return strings.Split(u, ",")
 }
-func kafkaAdmin(t *testing.T) *kgo.Client {
+
+func Admin(t *testing.T) *kgo.Client {
 	t.Helper()
-	c, err := kgo.NewClient(kgo.SeedBrokers(kafkaBrokers(t)...))
+	c, err := kgo.NewClient(kgo.SeedBrokers(Brokers(t)...))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(c.Close)
 	return c
 }
-func provisionKafka(t *testing.T, c *kgo.Client, prefix string, n int32) transport.Options {
+
+func Provision(t *testing.T, c *kgo.Client, prefix string, n int32) transport.Options {
 	t.Helper()
 	topics := map[string]int32{prefix + ".request.Orders": n, prefix + ".request.Inventory": n, prefix + ".replies": 1}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -53,9 +52,10 @@ func provisionKafka(t *testing.T, c *kgo.Client, prefix string, n int32) transpo
 			t.Error(err)
 		}
 	})
-	return transport.Options{Brokers: kafkaBrokers(t), Prefix: prefix, ReplyTopic: prefix + ".replies"}
+	return transport.Options{Brokers: Brokers(t), Prefix: prefix, ReplyTopic: prefix + ".replies"}
 }
-func newKafkaTransport(t *testing.T, o transport.Options) *transport.Transport {
+
+func NewTransport(t *testing.T, o transport.Options) *transport.Transport {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -75,18 +75,8 @@ func newKafkaTransport(t *testing.T, o transport.Options) *transport.Transport {
 	})
 	return tr
 }
-func TestKafkaContract(t *testing.T) {
-	admin := kafkaAdmin(t)
-	var mu sync.Mutex
-	configs := map[string]transport.Options{}
-	contract.Run(t, func(t *testing.T) courier.Transport {
-		mu.Lock()
-		defer mu.Unlock()
-		opts, ok := configs[t.Name()]
-		if !ok {
-			opts = provisionKafka(t, admin, fmt.Sprintf("courier.contract.%d", time.Now().UnixNano()), 3)
-			configs[t.Name()] = opts
-		}
-		return newKafkaTransport(t, opts)
-	})
+func NewEnv(t *testing.T, partitions int32) (*kgo.Client, transport.Options) {
+	t.Helper()
+	admin := Admin(t)
+	return admin, Provision(t, admin, fmt.Sprintf("courier.test.%d", time.Now().UnixNano()), partitions)
 }

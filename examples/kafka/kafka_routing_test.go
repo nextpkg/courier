@@ -1,13 +1,14 @@
 //go:build integration
 
-package examples_test
+package kafka_test
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/examples/internal/testutil"
 	"reflect"
-	"sync"
 	"testing"
 	"time"
 
@@ -15,67 +16,12 @@ import (
 	"github.com/nextpkg/courier/examples/brokeradmin"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
-	transport "github.com/nextpkg/courier/transport/kafka"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-func waitFor(t *testing.T, d time.Duration, condition func() bool, message string) {
-	t.Helper()
-	end := time.Now().Add(d)
-	for {
-		if condition() {
-			return
-		}
-		if time.Now().After(end) {
-			t.Fatal(message)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-func kafkaClient(t *testing.T, tr courier.Transport) *courier.Client {
-	t.Helper()
-	c, err := courier.NewClient(context.Background(), tr, courier.ClientOptions{MaxInFlight: 512, DefaultTimeout: 8 * time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := c.Close(ctx); err != nil {
-			t.Error(err)
-		}
-	})
-	return c
-}
-func kafkaServer(t *testing.T, tr courier.Transport, h demo.Orders) *courier.Server {
-	t.Helper()
-	s, err := courier.NewServer(tr, courier.ServerOptions{MaxConcurrent: 128})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = demo.RegisterOrders(s, h); err != nil {
-		t.Fatal(err)
-	}
-	if err = s.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := s.Close(ctx); err != nil {
-			t.Error(err)
-		}
-	})
-	return s
-}
-func newKafkaEnv(t *testing.T, partitions int32) (*kgo.Client, transport.Options) {
-	t.Helper()
-	admin := kafkaAdmin(t)
-	return admin, provisionKafka(t, admin, fmt.Sprintf("courier.test.%d", time.Now().UnixNano()), partitions)
-}
 func TestKafkaMethodEvolutionAndFixedTopicCount(t *testing.T) {
-	admin, opts := newKafkaEnv(t, 2)
-	tr := newKafkaTransport(t, opts)
+	admin, opts := kafkatest.NewEnv(t, 2)
+	tr := kafkatest.NewTransport(t, opts)
 	old, _ := courier.NewServer(tr, courier.ServerOptions{})
 	p := demo.NewOrdersProcessor(&handlers.Orders{})
 	delete(p.ProcessorMap(), "Ping")
@@ -84,7 +30,7 @@ func TestKafkaMethodEvolutionAndFixedTopicCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = old.Close(context.Background()) })
-	c := kafkaClient(t, newKafkaTransport(t, opts))
+	c := testutil.Client(t, kafkatest.NewTransport(t, opts))
 	api := demo.NewOrdersAsyncClient(c)
 	if _, err := api.Get(context.Background(), "old", 0); err != nil {
 		t.Fatal(err)
@@ -100,10 +46,10 @@ func TestKafkaMethodEvolutionAndFixedTopicCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Replace the two-method processor with its regenerated three-method version.
-	kafkaServer(t, tr, &handlers.Orders{})
-	kafkaServer(t, newKafkaTransport(t, opts), &handlers.Orders{})
+	testutil.Server(t, tr, &handlers.Orders{})
+	testutil.Server(t, kafkatest.NewTransport(t, opts), &handlers.Orders{})
 	for i := 0; i < 4; i++ {
-		next := kafkaClient(t, newKafkaTransport(t, opts))
+		next := testutil.Client(t, kafkatest.NewTransport(t, opts))
 		a := demo.NewOrdersAsyncClient(next)
 		if err := a.Ping(context.Background()); err != nil {
 			t.Fatal(err)
@@ -129,38 +75,20 @@ func TestKafkaMethodEvolutionAndFixedTopicCount(t *testing.T) {
 	}
 }
 
-type heldOrders struct {
-	*handlers.Orders
-	started chan struct{}
-	release chan struct{}
-	once    sync.Once
-}
-
-func (h *heldOrders) Get(ctx context.Context, id string, ms int32) (*demo.Item, error) {
-	if id == "first" {
-		h.once.Do(func() { close(h.started) })
-		select {
-		case <-h.release:
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	}
-	return h.Orders.Get(ctx, id, ms)
-}
 func TestKafkaCommitOrderAndRebalance(t *testing.T) {
-	admin, opts := newKafkaEnv(t, 1)
-	a := newKafkaTransport(t, opts)
+	admin, opts := kafkatest.NewEnv(t, 1)
+	a := kafkatest.NewTransport(t, opts)
 	r := &handlers.Recorder{}
-	h := &heldOrders{Orders: &handlers.Orders{Recorder: r}, started: make(chan struct{}), release: make(chan struct{})}
-	s1 := kafkaServer(t, a, h)
-	c := kafkaClient(t, newKafkaTransport(t, opts))
+	h := &testutil.HeldOrders{Orders: &handlers.Orders{Recorder: r}, Started: make(chan struct{}), Release: make(chan struct{})}
+	s1 := testutil.Server(t, a, h)
+	c := testutil.Client(t, kafkatest.NewTransport(t, opts))
 	api := demo.NewOrdersAsyncClient(c)
 	first, err := api.GetAsync(context.Background(), "first", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case <-h.started:
+	case <-h.Started:
 	case <-time.After(5 * time.Second):
 		t.Fatal("slow handler not entered")
 	}
@@ -179,13 +107,13 @@ func TestKafkaCommitOrderAndRebalance(t *testing.T) {
 	if offset > 0 {
 		t.Fatalf("committed %d past unfinished first record", offset)
 	}
-	b := newKafkaTransport(t, opts)
+	b := kafkatest.NewTransport(t, opts)
 	s2, _ := courier.NewServer(b, courier.ServerOptions{})
 	_ = demo.RegisterOrders(s2, &handlers.Orders{Recorder: r})
 	started := make(chan error, 1)
 	go func() { started <- s2.Start(context.Background()) }()
 	t.Cleanup(func() { _ = s2.Close(context.Background()) })
-	close(h.release)
+	close(h.Release)
 	if _, err = first.Await(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +125,7 @@ func TestKafkaCommitOrderAndRebalance(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("rebalance did not complete")
 	}
-	waitFor(t, 3*time.Second, func() bool {
+	testutil.WaitFor(t, 3*time.Second, func() bool {
 		n, e := brokeradmin.Committed(context.Background(), admin, a.Group(topic), topic, 0)
 		return e == nil && n >= 2
 	}, "contiguous completed offsets were not committed")
@@ -221,10 +149,10 @@ func TestKafkaCommitOrderAndRebalance(t *testing.T) {
 	}
 }
 func TestKafkaSharedTopicRequiresCompleteHandlers(t *testing.T) {
-	_, opts := newKafkaEnv(t, 2)
+	_, opts := kafkatest.NewEnv(t, 2)
 	shared := opts.Prefix + ".request.Orders"
 	opts.RequestTopics = map[string]string{"Orders": shared, "Inventory": shared}
-	tr := newKafkaTransport(t, opts)
+	tr := kafkatest.NewTransport(t, opts)
 	incomplete, _ := courier.NewServer(tr, courier.ServerOptions{})
 	_ = demo.RegisterOrders(incomplete, &handlers.Orders{})
 	if err := incomplete.Start(context.Background()); err == nil {
@@ -240,7 +168,7 @@ func TestKafkaSharedTopicRequiresCompleteHandlers(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = s.Close(context.Background()) })
 	}
-	c := kafkaClient(t, newKafkaTransport(t, opts))
+	c := testutil.Client(t, kafkatest.NewTransport(t, opts))
 	for i := 0; i < 20; i++ {
 		v, err := demo.NewOrdersAsyncClient(c).Get(context.Background(), "A", 0)
 		if err != nil || v.Source != "Orders" {
@@ -253,25 +181,25 @@ func TestKafkaSharedTopicRequiresCompleteHandlers(t *testing.T) {
 	}
 }
 func TestKafkaReplyExpansionKeepsInflightRoute(t *testing.T) {
-	admin, opts := newKafkaEnv(t, 1)
-	h := &heldOrders{Orders: &handlers.Orders{}, started: make(chan struct{}), release: make(chan struct{})}
-	s := kafkaServer(t, newKafkaTransport(t, opts), h)
+	admin, opts := kafkatest.NewEnv(t, 1)
+	h := &testutil.HeldOrders{Orders: &handlers.Orders{}, Started: make(chan struct{}), Release: make(chan struct{})}
+	s := testutil.Server(t, kafkatest.NewTransport(t, opts), h)
 	_ = s
-	original := newKafkaTransport(t, opts)
-	c := kafkaClient(t, original)
+	original := kafkatest.NewTransport(t, opts)
+	c := testutil.Client(t, original)
 	future, err := demo.NewOrdersAsyncClient(c).GetAsync(context.Background(), "first", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case <-h.started:
+	case <-h.Started:
 	case <-time.After(3 * time.Second):
 		t.Fatal("handler not entered")
 	}
 	if err = brokeradmin.Expand(context.Background(), admin, opts.Prefix+".replies", 2); err != nil {
 		t.Fatal(err)
 	}
-	close(h.release)
+	close(h.Release)
 	v, err := future.Await(context.Background())
 	if err != nil || v.ID != "first" {
 		t.Fatal(v, err)
@@ -281,10 +209,10 @@ func TestKafkaReplyExpansionKeepsInflightRoute(t *testing.T) {
 	_ = s.Close(context.Background())
 	serverOpts := opts
 	serverOpts.ReplyPartitions = []int32{0, 1}
-	kafkaServer(t, newKafkaTransport(t, serverOpts), &handlers.Orders{})
+	testutil.Server(t, kafkatest.NewTransport(t, serverOpts), &handlers.Orders{})
 	newOpts := opts
 	newOpts.ReplyPartitions = []int32{1}
-	next := kafkaClient(t, newKafkaTransport(t, newOpts))
+	next := testutil.Client(t, kafkatest.NewTransport(t, newOpts))
 	if _, err = demo.NewOrdersAsyncClient(next).Get(context.Background(), "new-partition", 0); err != nil {
 		t.Fatal(err)
 	}
@@ -296,8 +224,8 @@ func TestKafkaReplyExpansionKeepsInflightRoute(t *testing.T) {
 	}
 }
 func TestKafkaReplyReaderReadyAndSessionIsolation(t *testing.T) {
-	_, opts := newKafkaEnv(t, 1)
-	tr := newKafkaTransport(t, opts)
+	_, opts := kafkatest.NewEnv(t, 1)
+	tr := kafkatest.NewTransport(t, opts)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	p, err := kgo.NewClient(kgo.SeedBrokers(opts.Brokers...), kgo.RecordPartitioner(kgo.ManualPartitioner()))
@@ -320,7 +248,7 @@ func TestKafkaReplyReaderReadyAndSessionIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, inbox)
+	defer testutil.Close(t, inbox)
 	for _, session := range []string{"old-session", "new-session"} {
 		e := courier.Envelope{Version: 1, Kind: "response", Service: "Orders", Method: "Get", ID: session, Session: session, Reply: inbox.Route()}
 		data, _ := courier.EncodeEnvelope(e, courier.DefaultMaxFrameBytes)

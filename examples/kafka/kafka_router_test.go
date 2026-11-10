@@ -1,11 +1,12 @@
 //go:build integration
 
-package examples_test
+package kafka_test
 
 import (
 	"context"
 	"fmt"
 	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
 	kafka "github.com/nextpkg/courier/transport/kafka"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"net/url"
@@ -46,12 +47,12 @@ func testKafkaRouterLifecycle(t *testing.T, batchSize int) {
 		o.ReplyRouter.BatchSize = batchSize
 		return o
 	}
-	admin, opts := newKafkaEnv(t, 1)
+	admin, opts := kafkatest.NewEnv(t, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	serverOpts := opts
 	serverOpts.DynamicReplyPartitions = true
-	server := newKafkaTransport(t, serverOpts)
+	server := kafkatest.NewTransport(t, serverOpts)
 	var mu sync.Mutex
 	partitions := map[int32]bool{}
 	block, release := make(chan struct{}), make(chan struct{})
@@ -84,7 +85,7 @@ func testKafkaRouterLifecycle(t *testing.T, batchSize int) {
 	ins := []courier.Inbox{}
 	got := make(chan string, 200)
 	for i := 0; i < 3; i++ {
-		tr := newKafkaTransport(t, routerOptions(opts))
+		tr := kafkatest.NewTransport(t, routerOptions(opts))
 		peers = append(peers, tr)
 		session := fmt.Sprint("s", i)
 		in, err := tr.OpenInbox(ctx, session, func(b []byte) {
@@ -189,7 +190,7 @@ func testKafkaRouterLifecycle(t *testing.T, batchSize int) {
 	}
 	<-sent
 	receive(90)
-	peers[2] = newKafkaTransport(t, routerOptions(opts))
+	peers[2] = kafkatest.NewTransport(t, routerOptions(opts))
 	// Hold one reply across origin restart with the exact same endpoint/session.
 	send(0, "old")
 	select {
@@ -205,7 +206,7 @@ func testKafkaRouterLifecycle(t *testing.T, batchSize int) {
 	u, _ := url.Parse(oldEndpoint)
 	o.ReplyRouter.ListenAddress = u.Host
 	o.ReplyRouter.AdvertiseURL = oldEndpoint
-	peers[0] = newKafkaTransport(t, o)
+	peers[0] = kafkatest.NewTransport(t, o)
 	ins[0], err = peers[0].OpenInbox(ctx, "s0", func(b []byte) { e, _ := courier.DecodeEnvelope(b, courier.DefaultMaxFrameBytes); got <- e.ID })
 	if err != nil {
 		t.Fatal(err)

@@ -1,10 +1,12 @@
 //go:build integration
 
-package examples_test
+package kafka_test
 
 import (
 	"context"
 	"errors"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/examples/internal/testutil"
 	"strings"
 	"testing"
 	"time"
@@ -17,9 +19,9 @@ import (
 )
 
 func TestKafkaUnroutableRecordsAndBudgets(t *testing.T) {
-	admin, opts := newKafkaEnv(t, 3)
-	tr := newKafkaTransport(t, opts)
-	kafkaServer(t, tr, &handlers.Orders{})
+	admin, opts := kafkatest.NewEnv(t, 3)
+	tr := kafkatest.NewTransport(t, opts)
+	testutil.Server(t, tr, &handlers.Orders{})
 	topic, _ := tr.RequestTopic("Orders")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -44,33 +46,33 @@ func TestKafkaUnroutableRecordsAndBudgets(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	waitFor(t, 5*time.Second, func() bool {
+	testutil.WaitFor(t, 5*time.Second, func() bool {
 		n, err := brokeradmin.Committed(ctx, admin, tr.Group(topic), topic, 0)
 		return err == nil && n == 3
 	}, "poison records blocked committed progress")
 	if tr.Stats().DiscardedRecords != 3 || tr.Stats().RequestsHandled != 0 {
 		t.Fatalf("invalid route reached a handler: %+v", tr.Stats())
 	}
-	if _, err := demo.NewOrdersAsyncClient(kafkaClient(t, newKafkaTransport(t, opts))).Get(ctx, "after-poison", 0); err != nil {
+	if _, err := demo.NewOrdersAsyncClient(testutil.Client(t, kafkatest.NewTransport(t, opts))).Get(ctx, "after-poison", 0); err != nil {
 		t.Fatal(err)
 	}
 
 	limited := opts
 	limited.MaxSubscriptions = 1
-	lt := newKafkaTransport(t, limited)
-	kafkaClient(t, lt)
+	lt := kafkatest.NewTransport(t, limited)
+	testutil.Client(t, lt)
 	if _, err := lt.OpenInbox(ctx, "extra", func([]byte) {}); !errors.Is(err, courier.ErrOverloaded) {
 		t.Fatalf("subscription budget: %v", err)
 	}
 	limited = opts
 	limited.MaxTopics = 1 // The one allowed metadata entry is the reply topic.
-	api := demo.NewOrdersAsyncClient(kafkaClient(t, newKafkaTransport(t, limited)))
+	api := demo.NewOrdersAsyncClient(testutil.Client(t, kafkatest.NewTransport(t, limited)))
 	if _, err := api.Get(ctx, "topic-budget", 0); !errors.Is(err, courier.ErrOverloaded) {
 		t.Fatalf("topic budget: %v", err)
 	}
 	limited = opts
 	limited.MaxTopicPartitions = 1
-	api = demo.NewOrdersAsyncClient(kafkaClient(t, newKafkaTransport(t, limited)))
+	api = demo.NewOrdersAsyncClient(testutil.Client(t, kafkatest.NewTransport(t, limited)))
 	if _, err := api.Get(ctx, "partition-budget", 0); err == nil || !strings.Contains(err.Error(), "partition budget") {
 		t.Fatalf("partition budget: %v", err)
 	}

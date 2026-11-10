@@ -3,6 +3,7 @@ package examples_test
 import (
 	"context"
 	"errors"
+	"github.com/nextpkg/courier/examples/internal/testutil"
 	"testing"
 	"time"
 
@@ -17,18 +18,18 @@ func TestGeneratedRPCEntryPoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, bus)
+	defer testutil.Close(t, bus)
 	ctx := context.Background()
 	server, err := demo.ListenOrders(ctx, bus, &handlers.Orders{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, server)
+	defer testutil.Close(t, server)
 	api, conn, err := demo.DialOrders(ctx, bus, courier.ClientOptions{DefaultTimeout: 100 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, conn)
+	defer testutil.Close(t, conn)
 	result, err := api.Get(ctx, "ordinary-rpc", 0)
 	if err != nil || result == nil || result.ID != "ordinary-rpc" {
 		t.Fatalf("sync result: %v, %v", result, err)
@@ -54,7 +55,7 @@ func TestGeneratedRPCEntryPoints(t *testing.T) {
 	if conn.Pending() != 0 {
 		t.Fatal("pending calls remain")
 	}
-	closeTestResource(t, conn)
+	testutil.Close(t, conn)
 	if _, err = api.Get(ctx, "closed", 0); !errors.Is(err, courier.ErrClosed) {
 		t.Fatalf("closed connection: %v", err)
 	}
@@ -63,12 +64,12 @@ func TestGeneratedRPCEntryPoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, nextConn)
+	defer testutil.Close(t, nextConn)
 	if _, err = next.Get(ctx, "reconnected", 0); err != nil {
 		t.Fatal(err)
 	}
-	closeTestResource(t, nextConn)
-	closeTestResource(t, server)
+	testutil.Close(t, nextConn)
+	testutil.Close(t, server)
 	if stats := bus.Stats(); stats.Services != 0 || stats.Inboxes != 0 {
 		t.Fatalf("resource leak: %+v", stats)
 	}
@@ -79,7 +80,7 @@ func TestGeneratedRPCEntryPointFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, bus)
+	defer testutil.Close(t, bus)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if api, conn, err := demo.DialOrders(ctx, bus); err == nil || api != nil || conn != nil {
@@ -103,7 +104,7 @@ func TestGeneratedRPCEntryPointFailures(t *testing.T) {
 	if stats := bus.Stats(); stats.Services != 0 || stats.Inboxes != 0 {
 		t.Fatalf("failed startup leaked resources: %+v", stats)
 	}
-	closeTestResource(t, bus)
+	testutil.Close(t, bus)
 	if _, err := demo.ListenOrders(context.Background(), bus, &handlers.Orders{}); err == nil {
 		t.Fatal("closed transport listen succeeded")
 	}

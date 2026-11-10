@@ -1,6 +1,6 @@
 //go:build integration
 
-package examples_test
+package kafka_test
 
 import (
 	"bufio"
@@ -10,6 +10,8 @@ import (
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/examples/internal/testutil"
 	transport "github.com/nextpkg/courier/transport/kafka"
 	"io"
 	"os"
@@ -44,7 +46,7 @@ func TestKafkaChild(t *testing.T) {
 		return
 	}
 	err := func() (runErr error) {
-		tr, err := transport.New(context.Background(), transport.Options{Brokers: kafkaBrokers(t), Prefix: os.Getenv("KAFKA_CHILD_PREFIX")})
+		tr, err := transport.New(context.Background(), transport.Options{Brokers: kafkatest.Brokers(t), Prefix: os.Getenv("KAFKA_CHILD_PREFIX")})
 		if err != nil {
 			return err
 		}
@@ -82,7 +84,7 @@ func TestKafkaChild(t *testing.T) {
 	os.Exit(0)
 }
 func TestKafkaCrossProcess(t *testing.T) {
-	_, opts := newKafkaEnv(t, 3)
+	_, opts := kafkatest.NewEnv(t, 3)
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	t.Cleanup(cancel)
 	expected := map[string]map[int64]bool{"Orders": {}, "Inventory": {}}
@@ -127,11 +129,11 @@ func TestKafkaCrossProcess(t *testing.T) {
 	var clients []*courier.Client
 	var orders []*demo.OrdersAsyncClient
 	for i := 0; i < 3; i++ {
-		api, conn, err := demo.DialOrders(ctx, newKafkaTransport(t, opts), courier.ClientOptions{MaxInFlight: 512, DefaultTimeout: 8 * time.Second})
+		api, conn, err := demo.DialOrders(ctx, kafkatest.NewTransport(t, opts), courier.ClientOptions{MaxInFlight: 512, DefaultTimeout: 8 * time.Second})
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { closeTestResource(t, conn) })
+		t.Cleanup(func() { testutil.Close(t, conn) })
 		clients = append(clients, conn)
 		orders = append(orders, api)
 	}

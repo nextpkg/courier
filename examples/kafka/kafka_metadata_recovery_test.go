@@ -1,12 +1,14 @@
 //go:build integration
 
-package examples_test
+package kafka_test
 
 import (
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/examples/internal/testutil"
 	"io"
 	"net"
 	"sync"
@@ -129,12 +131,12 @@ func (p *leaderErrorProxy) Dial(ctx context.Context, network, address string) (n
 func TestKafkaLeaderMetadataRecovery(t *testing.T) {
 	for _, age := range []time.Duration{5 * time.Second, 0} {
 		t.Run(fmt.Sprintf("metadata-min-age=%s", age), func(t *testing.T) {
-			_, opts := newKafkaEnv(t, 1)
+			_, opts := kafkatest.NewEnv(t, 1)
 			proxy := &leaderErrorProxy{errors: make(chan error, 4)}
 			clientOpts := opts
 			clientOpts.Dialer = proxy.Dial
 			clientOpts.MetadataMinAge = age
-			c := kafkaClient(t, newKafkaTransport(t, clientOpts))
+			c := testutil.Client(t, kafkatest.NewTransport(t, clientOpts))
 			api := demo.NewOrdersAsyncClient(c)
 			f, err := api.GetAsync(context.Background(), "leader-retry", 0)
 			if err != nil {
@@ -164,7 +166,7 @@ func TestKafkaLeaderMetadataRecovery(t *testing.T) {
 			}
 			t.Logf("leader error recovered and acknowledged in %s", time.Since(start))
 			recorder := &handlers.Recorder{}
-			kafkaServer(t, newKafkaTransport(t, opts), &handlers.Orders{Recorder: recorder})
+			testutil.Server(t, kafkatest.NewTransport(t, opts), &handlers.Orders{Recorder: recorder})
 			v, err := f.Await(context.Background())
 			if err != nil || v == nil || v.ID != "leader-retry" {
 				t.Fatalf("result=%v %v", v, err)

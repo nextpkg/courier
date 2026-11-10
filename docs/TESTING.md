@@ -11,6 +11,10 @@
 
 普通断言与 Broker 回归不是相互替代的重复测试：前者稳定覆盖边界，后者验证 SDK、Broker 和故障时序。性能测试不设置机器相关的固定吞吐阈值。
 
+## 目录归属
+
+Kafka 专属集成测试、压测和诊断位于 `examples/kafka/`；跨 provider 的高可用场景保留在 `examples/high_availability_test.go`。公共测试辅助函数位于 `examples/internal/testutil`，Kafka 环境与诊断辅助位于 `examples/internal/kafkatest`。适配器内部单元测试仍随 `transport/<provider>`，生成器、协议及内存合约保留公共位置。
+
 ## 复现
 
 从仓库根目录运行全部模块检查：
@@ -39,8 +43,8 @@ NATS_URL=nats://127.0.0.1:4222 NATS_SERVER="$(command -v nats-server)"   go test
 生产协议选择由 `ReplyRouterOptions.ForwardProtocol` 显式设置，不读取压测环境变量。集成测试自身使用 REPLY_MODE 选择该字段，可分别验证 HTTP 与 Thrift 的 batch 0/32、扩容和实例重启：
 
 ```sh
-KAFKA_BROKERS=127.0.0.1:9092 REPLY_MODE=http   go test -tags=integration -run '^TestKafkaRouterRoutingExpansionAndRestart$' -count=1 ./examples
-KAFKA_BROKERS=127.0.0.1:9092 REPLY_MODE=thrift   go test -tags=integration -run '^TestKafkaRouterRoutingExpansionAndRestart$' -count=1 ./examples
+KAFKA_BROKERS=127.0.0.1:9092 REPLY_MODE=http   go test -tags=integration -run '^TestKafkaRouterRoutingExpansionAndRestart$' -count=1 ./examples/kafka
+KAFKA_BROKERS=127.0.0.1:9092 REPLY_MODE=thrift   go test -tags=integration -run '^TestKafkaRouterRoutingExpansionAndRestart$' -count=1 ./examples/kafka
 ```
 
 ## 资源限额与联合并发扫描
@@ -48,7 +52,7 @@ KAFKA_BROKERS=127.0.0.1:9092 REPLY_MODE=thrift   go test -tags=integration -run 
 当前已测曲线和测量条件在 [性能图表](benchmarks/README.md)，容量解释在 [容量规划](KAFKA-CAPACITY.md)。下面命令本身不会创建 Broker 或设置 CPU/内存配额，应在相应容器限额下运行：
 
 ```sh
-KAFKA_BROKERS=kafka:9092 GOMAXPROCS=4 REPLY_MODE=thrift THRIFT_BATCH_SIZE=32   go test -tags=integration ./examples -run '^TestKafkaLoadCurve$' -count=1 -timeout=10m -args   -kafka-load-concurrency=256,512,768,1024,1280,1536,2048,3072   -kafka-load-duration=30s -kafka-load-trials=2 -kafka-load-mixed   -kafka-publish-workers=128 -kafka-server-workers=128 -kafka-reply-workers=128   -kafka-load-window=1024 -kafka-core-concurrency=128 -kafka-publish-buffers=1024   -kafka-max-in-flight=2048 -kafka-forward-batches=2 -kafka-load-resources
+KAFKA_BROKERS=kafka:9092 GOMAXPROCS=4 REPLY_MODE=thrift THRIFT_BATCH_SIZE=32   go test -tags=integration ./examples/kafka -run '^TestKafkaLoadCurve$' -count=1 -timeout=10m -args   -kafka-load-concurrency=256,512,768,1024,1280,1536,2048,3072   -kafka-load-duration=30s -kafka-load-trials=2 -kafka-load-mixed   -kafka-publish-workers=128 -kafka-server-workers=128 -kafka-reply-workers=128   -kafka-load-window=1024 -kafka-core-concurrency=128 -kafka-publish-buffers=1024   -kafka-max-in-flight=2048 -kafka-forward-batches=2 -kafka-load-resources
 ```
 
 此命令连续复用进程；图示曲线的各点使用独立进程与新 Broker，不能宣称两种运行顺序完全相同。固定默认 GC，不额外设置 GOGC/GOMEMLIMIT。REPLY_MODE=direct 选择独立直读对照；其他值走 HTTP 网关，thrift 走 Thrift 网关。

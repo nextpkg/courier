@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/examples/internal/testutil"
 	"io"
 	"os"
 	"os/exec"
@@ -65,11 +67,11 @@ func TestHATransportChild(t *testing.T) {
 	if strings.HasPrefix(os.Getenv("COURIER_HA_PREFIX"), "courier.natsha.") {
 		tr = natsFactory(natsURL(t), os.Getenv("COURIER_HA_PREFIX"))(t)
 	} else {
-		kt, err := transport.New(context.Background(), transport.Options{Brokers: kafkaBrokers(t), Prefix: os.Getenv("COURIER_HA_PREFIX")})
+		kt, err := transport.New(context.Background(), transport.Options{Brokers: kafkatest.Brokers(t), Prefix: os.Getenv("COURIER_HA_PREFIX")})
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer closeTestResource(t, kt)
+		defer testutil.Close(t, kt)
 		tr = kt
 	}
 	if role == "client" {
@@ -77,7 +79,7 @@ func TestHATransportChild(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer closeTestResource(t, c)
+		defer testutil.Close(t, c)
 		f, err := api.GetAsync(context.Background(), "first", 0)
 		if err != nil {
 			t.Fatal(err)
@@ -90,7 +92,7 @@ func TestHATransportChild(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer closeTestResource(t, s)
+		defer testutil.Close(t, s)
 	}
 	fmt.Println("READY")
 	bufio.NewScanner(os.Stdin).Scan()
@@ -174,8 +176,8 @@ func (p *haProcess) stop(t *testing.T, abrupt bool) {
 }
 
 func TestKafkaHAProcessScaling(t *testing.T) {
-	_, opts := newKafkaEnv(t, 3)
-	runHAProcessScaling(t, opts.Prefix, func() courier.Transport { return newKafkaTransport(t, opts) })
+	_, opts := kafkatest.NewEnv(t, 3)
+	runHAProcessScaling(t, opts.Prefix, func() courier.Transport { return kafkatest.NewTransport(t, opts) })
 }
 func TestNATSHAProcessScaling(t *testing.T) {
 	prefix := fmt.Sprintf("courier.natsha.%d", time.Now().UnixNano())
@@ -184,7 +186,7 @@ func TestNATSHAProcessScaling(t *testing.T) {
 func runHAProcessScaling(t *testing.T, prefix string, newTransport func() courier.Transport) {
 	dir := t.TempDir()
 	first := startHAProcess(t, prefix, dir, "server", "")
-	c := kafkaClient(t, newTransport())
+	c := testutil.Client(t, newTransport())
 	api := demo.NewOrdersAsyncClient(c)
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
@@ -221,7 +223,7 @@ func runHAProcessScaling(t *testing.T, prefix string, newTransport func() courie
 	}
 	defer func() { cancel(); wg.Wait() }()
 	awaitPID := func(pid int64) {
-		waitFor(t, 15*time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return seen[pid] >= 4 }, "instance did not serve calls")
+		testutil.WaitFor(t, 15*time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return seen[pid] >= 4 }, "instance did not serve calls")
 	}
 	awaitPID(int64(first.cmd.Process.Pid))
 	for round := 0; round < 2; round++ {
@@ -270,10 +272,10 @@ func runHAProcessScaling(t *testing.T, prefix string, newTransport func() courie
 func TestKafkaHAServerCrash(t *testing.T) {
 	for _, stage := range []string{"before", "after"} {
 		t.Run(stage, func(t *testing.T) {
-			_, opts := newKafkaEnv(t, 1)
+			_, opts := kafkatest.NewEnv(t, 1)
 			dir := t.TempDir()
 			child := startHAProcess(t, opts.Prefix, dir, "server", stage)
-			c := kafkaClient(t, newKafkaTransport(t, opts))
+			c := testutil.Client(t, kafkatest.NewTransport(t, opts))
 			api := demo.NewOrdersAsyncClient(c)
 			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 			defer cancel()
@@ -286,7 +288,7 @@ func TestKafkaHAServerCrash(t *testing.T) {
 				marker = "effect"
 			}
 			path := filepath.Join(dir, fmt.Sprintf("%s-%d-crash", marker, child.cmd.Process.Pid))
-			waitFor(t, 5*time.Second, func() bool { _, err := os.Stat(path); return err == nil }, "crash point not reached")
+			testutil.WaitFor(t, 5*time.Second, func() bool { _, err := os.Stat(path); return err == nil }, "crash point not reached")
 			start := time.Now()
 			child.stop(t, true)
 			replacement := startHAProcess(t, opts.Prefix, dir, "server", "")
@@ -311,10 +313,10 @@ func TestKafkaHAServerCrash(t *testing.T) {
 }
 
 func TestKafkaHAClientCrash(t *testing.T) {
-	_, opts := newKafkaEnv(t, 1)
+	_, opts := kafkatest.NewEnv(t, 1)
 	started, release := make(chan struct{}), make(chan struct{})
-	h := &heldOrders{Orders: &handlers.Orders{}, started: started, release: release}
-	kafkaServer(t, newKafkaTransport(t, opts), h)
+	h := &testutil.HeldOrders{Orders: &handlers.Orders{}, Started: started, Release: release}
+	testutil.Server(t, kafkatest.NewTransport(t, opts), h)
 	child := startHAProcess(t, opts.Prefix, t.TempDir(), "client", "")
 	select {
 	case <-started:
@@ -322,15 +324,15 @@ func TestKafkaHAClientCrash(t *testing.T) {
 		t.Fatal("orphan handler not entered")
 	}
 	child.stop(t, true)
-	tr := newKafkaTransport(t, opts)
-	c := kafkaClient(t, tr)
+	tr := kafkatest.NewTransport(t, opts)
+	c := testutil.Client(t, tr)
 	api := demo.NewOrdersAsyncClient(c)
 	close(release)
 	v, err := api.Get(context.Background(), "new-client", 0)
 	if err != nil || v == nil || v.ID != "new-client" {
 		t.Fatalf("new call=%v %v", v, err)
 	}
-	waitFor(t, 5*time.Second, func() bool { return tr.Stats().ReplyRecords >= 2 }, "old reply not observed")
+	testutil.WaitFor(t, 5*time.Second, func() bool { return tr.Stats().ReplyRecords >= 2 }, "old reply not observed")
 	if tr.Stats().ReplyMatched != 1 || c.Pending() != 0 {
 		t.Fatalf("old reply matched new session: %+v pending=%d", tr.Stats(), c.Pending())
 	}
@@ -338,18 +340,18 @@ func TestKafkaHAClientCrash(t *testing.T) {
 }
 
 func TestKafkaHABoundedPressureRecovery(t *testing.T) {
-	_, opts := newKafkaEnv(t, 3)
-	trace := &kafkaTrace{start: time.Now()}
+	_, opts := kafkatest.NewEnv(t, 3)
+	trace := kafkatest.NewTrace()
 	opts.Hooks = append(opts.Hooks, trace)
 	defer func() {
 		if t.Failed() {
-			for _, event := range trace.snapshot() {
+			for _, event := range trace.Snapshot() {
 				t.Log(event)
 			}
 		}
 	}()
 
-	runHABoundedPressureRecovery(t, func() courier.Transport { return newKafkaTransport(t, opts) })
+	runHABoundedPressureRecovery(t, func() courier.Transport { return kafkatest.NewTransport(t, opts) })
 }
 func TestNATSHABoundedPressureRecovery(t *testing.T) {
 	prefix := fmt.Sprintf("courier.natsha.%d", time.Now().UnixNano())
@@ -358,13 +360,13 @@ func TestNATSHABoundedPressureRecovery(t *testing.T) {
 func runHABoundedPressureRecovery(t *testing.T, newTransport func() courier.Transport) {
 	serverTransport := newTransport()
 	recorder := &handlers.Recorder{}
-	kafkaServer(t, serverTransport, &handlers.Orders{Recorder: recorder})
+	testutil.Server(t, serverTransport, &handlers.Orders{Recorder: recorder})
 	tr := newTransport()
 	api, c, err := demo.DialOrders(context.Background(), tr, courier.ClientOptions{MaxInFlight: 8, DefaultTimeout: 5 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, c)
+	defer testutil.Close(t, c)
 	for round := 0; round < 3; round++ {
 		var futures []*courier.Future[*demo.Item]
 		var ids []string
@@ -415,7 +417,7 @@ func TestNATSHAServerCrash(t *testing.T) {
 			prefix := fmt.Sprintf("courier.natsha.%d", time.Now().UnixNano())
 			dir := t.TempDir()
 			child := startHAProcess(t, prefix, dir, "server", stage)
-			c := kafkaClient(t, natsFactory(natsURL(t), prefix)(t))
+			c := testutil.Client(t, natsFactory(natsURL(t), prefix)(t))
 			api := demo.NewOrdersAsyncClient(c)
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
@@ -428,7 +430,7 @@ func TestNATSHAServerCrash(t *testing.T) {
 				marker = "effect"
 			}
 			path := filepath.Join(dir, fmt.Sprintf("%s-%d-crash", marker, child.cmd.Process.Pid))
-			waitFor(t, time.Second, func() bool { _, err := os.Stat(path); return err == nil }, "handler not entered")
+			testutil.WaitFor(t, time.Second, func() bool { _, err := os.Stat(path); return err == nil }, "handler not entered")
 			start := time.Now()
 			child.stop(t, true)
 			replacement := startHAProcess(t, prefix, dir, "server", "")
@@ -459,8 +461,8 @@ func TestNATSHAServerCrash(t *testing.T) {
 func TestNATSHAClientCrash(t *testing.T) {
 	prefix := fmt.Sprintf("courier.natsha.%d", time.Now().UnixNano())
 	started, release := make(chan struct{}), make(chan struct{})
-	h := &heldOrders{Orders: &handlers.Orders{}, started: started, release: release}
-	kafkaServer(t, natsFactory(natsURL(t), prefix)(t), h)
+	h := &testutil.HeldOrders{Orders: &handlers.Orders{}, Started: started, Release: release}
+	testutil.Server(t, natsFactory(natsURL(t), prefix)(t), h)
 	child := startHAProcess(t, prefix, t.TempDir(), "client", "")
 	select {
 	case <-started:
@@ -468,7 +470,7 @@ func TestNATSHAClientCrash(t *testing.T) {
 		t.Fatal("handler not entered")
 	}
 	child.stop(t, true)
-	c := kafkaClient(t, natsFactory(natsURL(t), prefix)(t))
+	c := testutil.Client(t, natsFactory(natsURL(t), prefix)(t))
 	api := demo.NewOrdersAsyncClient(c)
 	close(release)
 	for i := 0; i < 10; i++ {

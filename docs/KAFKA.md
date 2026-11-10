@@ -1,6 +1,6 @@
 # Kafka 路由、资源与故障语义
 
-实现使用 franz-go v1.22.2 和匹配的 kmsg v1.15.0；源码在 `transport/kafka`，部署工具在 `examples/brokeradmin`，集成测试位于 `examples/kafka*_test.go`。
+实现使用 franz-go v1.22.2 和匹配的 kmsg v1.15.0；源码在 `transport/kafka`，部署工具在 `examples/brokeradmin`，集成测试位于 `examples/kafka/*_test.go`。
 
 首次运行请先完成 [Kafka 示例](EXAMPLES.md#kafka)；本文供部署与运维查阅，参数的容量选择依据见 [容量规划](KAFKA-CAPACITY.md)。
 

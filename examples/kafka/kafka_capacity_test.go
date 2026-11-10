@@ -1,15 +1,17 @@
 //go:build integration
 
-package examples_test
+package kafka_test
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/examples/internal/testutil"
 	transport "github.com/nextpkg/courier/transport/kafka"
-	"fmt"
 	"runtime"
 	"sort"
 	"sync"
@@ -20,14 +22,14 @@ import (
 func TestKafkaSharedReplyReadAmplification(t *testing.T) {
 	for _, sessions := range []int{1, 4, 8} {
 		t.Run(fmt.Sprint(sessions), func(t *testing.T) {
-			_, opts := newKafkaEnv(t, 3)
-			kafkaServer(t, newKafkaTransport(t, opts), &handlers.Orders{})
+			_, opts := kafkatest.NewEnv(t, 3)
+			testutil.Server(t, kafkatest.NewTransport(t, opts), &handlers.Orders{})
 			var ts []*transport.Transport
 			var cs []*courier.Client
 			for i := 0; i < sessions; i++ {
-				tr := newKafkaTransport(t, opts)
+				tr := kafkatest.NewTransport(t, opts)
 				ts = append(ts, tr)
-				cs = append(cs, kafkaClient(t, tr))
+				cs = append(cs, testutil.Client(t, tr))
 			}
 			const count = 64
 			var fs []*courier.Future[*demo.Item]
@@ -56,7 +58,7 @@ func TestKafkaSharedReplyReadAmplification(t *testing.T) {
 			}
 			completed.Wait()
 			elapsed := time.Since(begin)
-			waitFor(t, 3*time.Second, func() bool {
+			testutil.WaitFor(t, 3*time.Second, func() bool {
 				for _, tr := range ts {
 					if tr.Stats().ReplyRecords < count {
 						return false
@@ -83,8 +85,8 @@ func TestKafkaSharedReplyReadAmplification(t *testing.T) {
 	}
 }
 func TestKafkaRepeatedLifecycle(t *testing.T) {
-	_, opts := newKafkaEnv(t, 1)
-	kafkaServer(t, newKafkaTransport(t, opts), &handlers.Orders{})
+	_, opts := kafkatest.NewEnv(t, 1)
+	testutil.Server(t, kafkatest.NewTransport(t, opts), &handlers.Orders{})
 	baseline := runtime.NumGoroutine()
 	for i := 0; i < 12; i++ {
 		tr, err := transport.New(context.Background(), opts)
@@ -110,5 +112,5 @@ func TestKafkaRepeatedLifecycle(t *testing.T) {
 			t.Fatal("retained Kafka resources")
 		}
 	}
-	assertGoroutinesReturn(t, baseline)
+	testutil.AssertGoroutinesReturn(t, baseline)
 }

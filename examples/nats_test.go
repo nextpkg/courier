@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/nextpkg/courier/examples/internal/testutil"
 	"io"
 	"os"
 	"os/exec"
@@ -17,12 +18,12 @@ import (
 	"testing"
 	"time"
 
+	sdk "github.com/nats-io/nats.go"
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/contract"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
 	transport "github.com/nextpkg/courier/transport/nats"
-	sdk "github.com/nats-io/nats.go"
 )
 
 func natsURL(t *testing.T) string {
@@ -74,7 +75,7 @@ func TestNATSNoRespondersAndConnectionClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, c)
+	defer testutil.Close(t, c)
 	_, err = demo.NewOrdersAsyncClient(c).Get(ctx, "absent", 0)
 	if !errors.Is(err, courier.ErrNoResponders) {
 		t.Fatalf("no responders: %v", err)
@@ -110,12 +111,12 @@ func TestNATSChild(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		defer closeTestResource(t, tr)
+		defer testutil.Close(t, tr)
 		s, err := courier.NewServer(tr, courier.ServerOptions{MaxConcurrent: 64})
 		if err != nil {
 			return err
 		}
-		defer closeTestResource(t, s)
+		defer testutil.Close(t, s)
 		switch role {
 		case "orders":
 			err = demo.RegisterOrders(s, &handlers.Orders{})
@@ -240,23 +241,23 @@ func TestNATSNativeOptionsAndNamespaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, a)
+	defer testutil.Close(t, a)
 	b, err := transport.New(conn, transport.Options{Prefix: "namespace.b"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, b)
+	defer testutil.Close(t, b)
 	s, _ := courier.NewServer(a, courier.ServerOptions{})
 	_ = demo.RegisterOrders(s, &handlers.Orders{})
 	if err = s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, s)
+	defer testutil.Close(t, s)
 	c, err := courier.NewClient(context.Background(), b, courier.ClientOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, c)
+	defer testutil.Close(t, c)
 	_, err = demo.NewOrdersAsyncClient(c).Get(context.Background(), "isolated", 0)
 	if !errors.Is(err, courier.ErrNoResponders) {
 		t.Fatalf("namespace leakage: %v", err)
@@ -301,5 +302,5 @@ func TestNATSRepeatedLifecycle(t *testing.T) {
 			t.Fatalf("adapter retained resources: %+v", stats)
 		}
 	}
-	assertGoroutinesReturn(t, baseline)
+	testutil.AssertGoroutinesReturn(t, baseline)
 }

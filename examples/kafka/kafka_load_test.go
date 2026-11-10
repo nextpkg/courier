@@ -1,12 +1,14 @@
 //go:build integration
 
-package examples_test
+package kafka_test
 
 import (
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/examples/internal/testutil"
 	kafka "github.com/nextpkg/courier/transport/kafka"
 	"os"
 	"runtime"
@@ -78,7 +80,7 @@ func runLoadCurve(t *testing.T) {
 	var transports []*kafka.Transport
 	var newTransport func(bool) courier.Transport
 	{
-		_, opts := newKafkaEnv(t, 3)
+		_, opts := kafkatest.NewEnv(t, 3)
 		opts.PublishBuffers = *loadPublishBuffers
 		serverOpts := opts
 		if os.Getenv("REPLY_MODE") != "direct" {
@@ -104,13 +106,13 @@ func runLoadCurve(t *testing.T) {
 		}
 		newTransport = func(server bool) courier.Transport {
 			if server {
-				var tr courier.Transport = newKafkaTransport(t, serverOpts)
+				var tr courier.Transport = kafkatest.NewTransport(t, serverOpts)
 				if *loadDiagnosticsEnabled {
 					tr = loadObservedTransport{tr, serverTiming}
 				}
 				return tr
 			}
-			tr := newKafkaTransport(t, opts)
+			tr := kafkatest.NewTransport(t, opts)
 			transports = append(transports, tr)
 			return tr
 		}
@@ -120,7 +122,7 @@ func runLoadCurve(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { closeTestResource(t, server) })
+	t.Cleanup(func() { testutil.Close(t, server) })
 	if *loadMixed {
 		for _, service := range []string{"Orders", "Inventory", "Inventory"} {
 			tr := newTransport(true)
@@ -133,7 +135,7 @@ func runLoadCurve(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { closeTestResource(t, replica) })
+			t.Cleanup(func() { testutil.Close(t, replica) })
 		}
 	}
 	var requestSequence atomic.Uint64
@@ -152,7 +154,7 @@ func runLoadCurve(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { closeTestResource(t, c) })
+		t.Cleanup(func() { testutil.Close(t, c) })
 		clients = append(clients, c)
 		if _, err := demo.NewOrdersAsyncClient(c).Get(context.Background(), "warmup", 0); err != nil {
 			t.Fatal(err)

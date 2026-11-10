@@ -1,6 +1,6 @@
 //go:build integration
 
-package examples_test
+package kafkatest
 
 import (
 	"fmt"
@@ -10,36 +10,38 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// kafkaTrace keeps a bounded timeline for diagnosing failed integration calls.
-type kafkaTrace struct {
+// Trace keeps a bounded timeline for diagnosing failed integration calls.
+type Trace struct {
 	mu     sync.Mutex
 	start  time.Time
 	events []string
 }
 
-func (h *kafkaTrace) add(format string, args ...any) {
+func (h *Trace) add(format string, args ...any) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if len(h.events) < 512 {
 		h.events = append(h.events, fmt.Sprintf("%s %s", time.Since(h.start), fmt.Sprintf(format, args...)))
 	}
 }
-func (h *kafkaTrace) OnProduceRecordBuffered(r *kgo.Record) {
+func (h *Trace) OnProduceRecordBuffered(r *kgo.Record) {
 	h.add("produce buffered topic=%s key=%s", r.Topic, r.Key)
 }
-func (h *kafkaTrace) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
+func (h *Trace) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
 	h.add("produce done topic=%s partition=%d offset=%d key=%s err=%v", r.Topic, r.Partition, r.Offset, r.Key, err)
 }
-func (h *kafkaTrace) OnFetchRecordBuffered(r *kgo.Record) {
+func (h *Trace) OnFetchRecordBuffered(r *kgo.Record) {
 	h.add("fetch buffered topic=%s partition=%d offset=%d", r.Topic, r.Partition, r.Offset)
 }
-func (h *kafkaTrace) OnBrokerE2E(_ kgo.BrokerMetadata, key int16, e kgo.BrokerE2E) {
+func (h *Trace) OnBrokerE2E(_ kgo.BrokerMetadata, key int16, e kgo.BrokerE2E) {
 	if e.DurationE2E()+e.WriteWait > 250*time.Millisecond || e.Err() != nil {
 		h.add("broker api=%d queue=%s wire=%s err=%v", key, e.WriteWait, e.DurationE2E(), e.Err())
 	}
 }
-func (h *kafkaTrace) snapshot() []string {
+func (h *Trace) Snapshot() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]string(nil), h.events...)
 }
+
+func NewTrace() *Trace { return &Trace{start: time.Now()} }

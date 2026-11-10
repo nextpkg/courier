@@ -1,6 +1,6 @@
 //go:build integration
 
-package examples_test
+package kafka_test
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"github.com/nextpkg/courier/examples/brokeradmin"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/examples/internal/testutil"
 	"net"
 	"runtime"
 	"sync"
@@ -86,18 +88,18 @@ func (h *effectOrders) Get(ctx context.Context, id string, ms int32) (*demo.Item
 	return v, err
 }
 func TestKafkaResponseFailureRedeliveryAndCommit(t *testing.T) {
-	admin, opts := newKafkaEnv(t, 1)
+	admin, opts := kafkatest.NewEnv(t, 1)
 	network := &cutDialer{}
 	serverOpts := opts
 	serverOpts.Dialer = network.Dial
 	serverOpts.OperationTimeout = time.Second
-	tr := newKafkaTransport(t, serverOpts)
+	tr := kafkatest.NewTransport(t, serverOpts)
 	r := &handlers.Recorder{}
 	failed := make(chan struct{})
 	release := make(chan struct{})
 	h := &effectOrders{Orders: &handlers.Orders{Recorder: r}, first: func() { network.Cut(); close(failed); <-release }}
-	kafkaServer(t, tr, h)
-	c := kafkaClient(t, newKafkaTransport(t, opts))
+	testutil.Server(t, tr, h)
+	c := testutil.Client(t, kafkatest.NewTransport(t, opts))
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 	f, err := demo.NewOrdersAsyncClient(c).GetAsync(ctx, "side-effect", 0)
@@ -110,7 +112,7 @@ func TestKafkaResponseFailureRedeliveryAndCommit(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 	close(release)
-	waitFor(t, 5*time.Second, func() bool { return tr.Stats().ConsumerRestarts > 0 }, "response publication failure did not restart uncommitted consumption")
+	testutil.WaitFor(t, 5*time.Second, func() bool { return tr.Stats().ConsumerRestarts > 0 }, "response publication failure did not restart uncommitted consumption")
 	topic, _ := tr.RequestTopic("Orders")
 	offset, err := brokeradmin.Committed(ctx, admin, tr.Group(topic), topic, 0)
 	if err != nil {
@@ -130,21 +132,21 @@ func TestKafkaResponseFailureRedeliveryAndCommit(t *testing.T) {
 	if r.Count("Orders.Get:side-effect") < 2 {
 		t.Fatal("test did not exercise side-effect replay after failed response")
 	}
-	waitFor(t, 3*time.Second, func() bool {
+	testutil.WaitFor(t, 3*time.Second, func() bool {
 		n, e := brokeradmin.Committed(context.Background(), admin, tr.Group(topic), topic, 0)
 		return e == nil && n >= 1
 	}, "response-confirmed record was not committed")
 	t.Logf("side effect executions=%d; one client invocation; failed response caused redelivery", r.Count("Orders.Get:side-effect"))
 }
 func TestKafkaReplyReconnectRetainsOffset(t *testing.T) {
-	_, opts := newKafkaEnv(t, 1)
-	h := &heldOrders{Orders: &handlers.Orders{}, started: make(chan struct{}), release: make(chan struct{})}
-	kafkaServer(t, newKafkaTransport(t, opts), h)
+	_, opts := kafkatest.NewEnv(t, 1)
+	h := &testutil.HeldOrders{Orders: &handlers.Orders{}, Started: make(chan struct{}), Release: make(chan struct{})}
+	testutil.Server(t, kafkatest.NewTransport(t, opts), h)
 	network := &cutDialer{}
 	clientOpts := opts
 	clientOpts.Dialer = network.Dial
-	tr := newKafkaTransport(t, clientOpts)
-	c := kafkaClient(t, tr)
+	tr := kafkatest.NewTransport(t, clientOpts)
+	c := testutil.Client(t, tr)
 	api := demo.NewOrdersAsyncClient(c)
 	if _, err := api.Get(context.Background(), "before", 0); err != nil {
 		t.Fatal(err)
@@ -159,12 +161,12 @@ func TestKafkaReplyReconnectRetainsOffset(t *testing.T) {
 		t.Fatal(err)
 	}
 	select {
-	case <-h.started:
+	case <-h.Started:
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
 	network.Cut()
-	close(h.release)
+	close(h.Release)
 	time.Sleep(120 * time.Millisecond)
 	network.Resume()
 	v, err := f.Await(ctx)
@@ -180,17 +182,17 @@ func TestKafkaReplyReconnectRetainsOffset(t *testing.T) {
 }
 
 func TestKafkaExpiredRedeliveryDoesNotRepeatHandler(t *testing.T) {
-	admin, opts := newKafkaEnv(t, 1)
+	admin, opts := kafkatest.NewEnv(t, 1)
 	network := &cutDialer{}
 	serverOpts := opts
 	serverOpts.Dialer = network.Dial
 	serverOpts.OperationTimeout = time.Second
-	tr := newKafkaTransport(t, serverOpts)
+	tr := kafkatest.NewTransport(t, serverOpts)
 	r := &handlers.Recorder{}
 	cut := make(chan struct{})
 	h := &effectOrders{Orders: &handlers.Orders{Recorder: r}, first: func() { network.Cut(); close(cut) }}
-	kafkaServer(t, tr, h)
-	c := kafkaClient(t, newKafkaTransport(t, opts))
+	testutil.Server(t, tr, h)
+	c := testutil.Client(t, kafkatest.NewTransport(t, opts))
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	f, err := demo.NewOrdersAsyncClient(c).GetAsync(ctx, "expired-effect", 0)
@@ -205,10 +207,10 @@ func TestKafkaExpiredRedeliveryDoesNotRepeatHandler(t *testing.T) {
 	if _, err = f.Await(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal(err)
 	}
-	waitFor(t, 5*time.Second, func() bool { return tr.Stats().ConsumerRestarts > 0 }, "no failed-response redelivery path")
+	testutil.WaitFor(t, 5*time.Second, func() bool { return tr.Stats().ConsumerRestarts > 0 }, "no failed-response redelivery path")
 	network.Resume()
 	topic, _ := tr.RequestTopic("Orders")
-	waitFor(t, 12*time.Second, func() bool {
+	testutil.WaitFor(t, 12*time.Second, func() bool {
 		n, e := brokeradmin.Committed(context.Background(), admin, tr.Group(topic), topic, 0)
 		return e == nil && n >= 1
 	}, "expired redelivery was not answered/committed")
@@ -217,14 +219,14 @@ func TestKafkaExpiredRedeliveryDoesNotRepeatHandler(t *testing.T) {
 	}
 }
 func TestKafkaProducerBackpressure(t *testing.T) {
-	_, opts := newKafkaEnv(t, 1)
-	kafkaServer(t, newKafkaTransport(t, opts), &handlers.Orders{})
+	_, opts := kafkatest.NewEnv(t, 1)
+	testutil.Server(t, kafkatest.NewTransport(t, opts), &handlers.Orders{})
 	network := &cutDialer{}
 	opts.Dialer = network.Dial
 	opts.PublishBuffers = 1
 	opts.OperationTimeout = time.Second
-	tr := newKafkaTransport(t, opts)
-	c := kafkaClient(t, tr)
+	tr := kafkatest.NewTransport(t, opts)
+	c := testutil.Client(t, tr)
 	api := demo.NewOrdersAsyncClient(c)
 	if _, err := api.Get(context.Background(), "prime-metadata", 0); err != nil {
 		t.Fatal(err)

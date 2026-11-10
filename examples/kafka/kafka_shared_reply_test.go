@@ -1,10 +1,12 @@
 //go:build integration
 
-package examples_test
+package kafka_test
 
 import (
 	"context"
 	"fmt"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/examples/internal/testutil"
 	"sync"
 	"testing"
 	"time"
@@ -14,8 +16,8 @@ import (
 )
 
 func TestKafkaSharedReplyReader(t *testing.T) {
-	producer, opts := newKafkaEnv(t, 3)
-	tr := newKafkaTransport(t, opts)
+	producer, opts := kafkatest.NewEnv(t, 3)
+	tr := kafkatest.NewTransport(t, opts)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	var inboxes []courier.Inbox
@@ -33,10 +35,10 @@ func TestKafkaSharedReplyReader(t *testing.T) {
 			t.Fatal(err)
 		}
 		inboxes = append(inboxes, inbox)
-		t.Cleanup(func() { closeTestResource(t, inbox) })
+		t.Cleanup(func() { testutil.Close(t, inbox) })
 	}
 	if dup, err := tr.OpenInbox(ctx, "0", func([]byte) {}); err == nil {
-		closeTestResource(t, dup)
+		testutil.Close(t, dup)
 		t.Fatal("duplicate session accepted")
 	}
 	publish := func(session, id string) {
@@ -93,8 +95,8 @@ func TestKafkaSharedReplyReader(t *testing.T) {
 }
 
 func TestKafkaSharedReaderSkipsNewSessionHistory(t *testing.T) {
-	producer, opts := newKafkaEnv(t, 1)
-	tr := newKafkaTransport(t, opts)
+	producer, opts := kafkatest.NewEnv(t, 1)
+	tr := kafkatest.NewTransport(t, opts)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	entered, release := make(chan struct{}), make(chan struct{})
