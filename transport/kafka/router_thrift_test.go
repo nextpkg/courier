@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"net"
 	"testing"
 )
@@ -24,7 +25,7 @@ func TestThriftForwardUnsignedIdentityReplayAndClose(t *testing.T) {
 	go func() { peer.serve(ln); close(done) }()
 	defer func() { peer.close(); <-done }()
 	send := func() int {
-		hdr, _ := marshalForwardRoute(f)
+		hdr, _ := wire.EncodeRoute(f)
 		result, err := peer.forward(context.Background(), ln.Addr().String(), "Forward", hdr, b, int64(r.t.opts.MaxFrameBytes))
 		if err != nil {
 			t.Fatal(err)

@@ -3,22 +3,17 @@ package kafka
 import (
 	"bytes"
 	"context"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"io"
 	"net/http"
 	"net/url"
 	"sync/atomic"
 )
 
-type batchMessage struct {
-	Instance string
-	Expires  int64
-	Data     []byte
-}
-
 // The drain may complete after the waiter cancels. Each item owns its buffered
 // completion channel; reuse requires both sides to have released the item.
 type forwardItem struct {
-	message batchMessage
+	message wire.BatchMessage
 	ctx     context.Context
 	done    chan int
 	refs    atomic.Int32
@@ -28,7 +23,7 @@ type forwardItem struct {
 // One coordinator owns each endpoint queue. Bounded consumer workers enqueue
 // while sends are in flight; a lone reply starts immediately when no send is active.
 func (r *replyRouter) enqueueForward(ctx context.Context, endpoint string, instance string, expires int64, data []byte) int {
-	item := r.forwardItems.Load().acquire(ctx, batchMessage{instance, expires, data})
+	item := r.forwardItems.Load().acquire(ctx, wire.BatchMessage{Instance: instance, Expires: expires, Data: data})
 	defer item.release()
 	r.batchMu.Lock()
 	if r.batches == nil {
@@ -79,7 +74,7 @@ func (r *replyRouter) drainForward(endpoint string) {
 		n, size := 0, 0
 		for n < len(queue) && n < r.opts.BatchSize {
 			next := len(queue[n].message.Instance) + 8 + len(queue[n].message.Data)
-			if n > 0 && size+next > r.t.opts.MaxFrameBytes+maxRouteBytes {
+			if n > 0 && size+next > r.t.opts.MaxFrameBytes+wire.MaxRouteBytes {
 				break
 			}
 			size += next
@@ -94,19 +89,21 @@ func (r *replyRouter) drainForward(endpoint string) {
 	}
 }
 
-func (r *replyRouter) batchLimit() int64 { return 2*int64(r.t.opts.MaxFrameBytes+maxRouteBytes) + 4096 }
+func (r *replyRouter) batchLimit() int64 {
+	return 2*int64(r.t.opts.MaxFrameBytes+wire.MaxRouteBytes) + 4096
+}
 
-func (r *replyRouter) sendBatch(endpoint string, messages []batchMessage) []int {
+func (r *replyRouter) sendBatch(endpoint string, messages []wire.BatchMessage) []int {
 	statuses := make([]int, len(messages))
 	var body []byte
 	if r.rpc != nil {
-		buffer := borrowBinaryBatch(messages)
-		defer releaseBinaryBatch(buffer)
-		body = buffer.data
+		buffer := wire.BorrowBatch(messages)
+		defer wire.ReleaseBatch(buffer)
+		body = buffer.Data
 	} else {
 		// net/http can close a request body asynchronously after Do returns.
 		// Keep this body independently owned instead of returning it to the pool.
-		body = encodeBinaryBatch(messages)
+		body = wire.EncodeBatch(messages)
 	}
 	if int64(len(body)) > r.batchLimit() {
 		return statuses
@@ -124,7 +121,7 @@ func (r *replyRouter) sendBatch(endpoint string, messages []batchMessage) []int 
 		if err != nil || result.status != http.StatusOK {
 			return statuses
 		}
-		decoded, err := decodeBinaryStatuses(result.body, len(messages))
+		decoded, err := wire.DecodeStatuses(result.body, len(messages))
 		if err != nil {
 			return statuses
 		}
@@ -145,7 +142,7 @@ func (r *replyRouter) sendBatch(endpoint string, messages []batchMessage) []int 
 	if err != nil || resp.StatusCode != http.StatusOK {
 		return statuses
 	}
-	result, err := decodeBinaryStatuses(data, len(messages))
+	result, err := wire.DecodeStatuses(data, len(messages))
 	if err != nil {
 		return statuses
 	}
@@ -165,14 +162,14 @@ func (r *replyRouter) serveBatch(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(413)
 		return
 	}
-	messages, err := decodeBinaryBatch(body, r.t.opts.MaxFrameBytes)
+	messages, err := wire.DecodeBatch(body, r.t.opts.MaxFrameBytes)
 	if err != nil {
 		w.WriteHeader(400)
 		return
 	}
 	// Validate the entire shape before delivering any item.
 	for _, m := range messages {
-		if len(m.Instance) > maxRouteBytes || len(m.Data) > r.t.opts.MaxFrameBytes {
+		if len(m.Instance) > wire.MaxRouteBytes || len(m.Data) > r.t.opts.MaxFrameBytes {
 			w.WriteHeader(413)
 			return
 		}
@@ -182,12 +179,12 @@ func (r *replyRouter) serveBatch(w http.ResponseWriter, req *http.Request) {
 		statuses[i] = r.deliverCompact(m)
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
-	_, _ = w.Write(encodeBinaryStatuses(statuses))
+	_, _ = w.Write(wire.EncodeStatuses(statuses))
 }
 
 func (r *replyRouter) completeForwardBatch(endpoint string, items []*forwardItem) {
 	active := items[:0]
-	messages := make([]batchMessage, 0, len(items))
+	messages := make([]wire.BatchMessage, 0, len(items))
 	for _, item := range items {
 		if item.ctx.Err() != nil {
 			item.complete(0)
@@ -242,7 +239,7 @@ func (r *replyRouter) drainConcurrentForward(endpoint string) {
 		n, size := 0, 0
 		for n < len(queue) && n < r.opts.BatchSize {
 			next := len(queue[n].message.Instance) + 8 + len(queue[n].message.Data)
-			if n > 0 && size+next > r.t.opts.MaxFrameBytes+maxRouteBytes {
+			if n > 0 && size+next > r.t.opts.MaxFrameBytes+wire.MaxRouteBytes {
 				break
 			}
 			size += next

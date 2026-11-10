@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"io"
 	"net"
 	"net/http"
@@ -43,20 +44,10 @@ type ReplyRouterOptions struct {
 
 // Route metadata carries correlation and expiry for trusted internal peers;
 // it is not an authentication token.
-type forwardRoute struct {
-	Endpoint  string
-	Instance  string
-	Session   string
-	ID        string
-	Topic     string
-	Partition int32
-	Expires   int64
-}
 
 var errReplyPartition = errors.New("kafka: reply partition not provisioned")
 
 const routeHeader = "courier-reply-route-v1"
-const maxRouteBytes = 768
 
 type routedInbox struct {
 	*replyInbox
@@ -291,9 +282,9 @@ func (r *replyRouter) routeHeader(e courier.Envelope) (kgo.RecordHeader, error) 
 	if e.Deadline > 0 && e.Deadline < expiry {
 		expiry = e.Deadline
 	}
-	f := forwardRoute{Endpoint: r.endpoint, Instance: r.instance, Session: e.Session, ID: e.ID, Topic: e.Reply.Topic, Partition: e.Reply.Partition, Expires: expiry}
-	b, err := marshalForwardRoute(f)
-	if len(b) > maxRouteBytes {
+	f := wire.Route{Endpoint: r.endpoint, Instance: r.instance, Session: e.Session, ID: e.ID, Topic: e.Reply.Topic, Partition: e.Reply.Partition, Expires: expiry}
+	b, err := wire.EncodeRoute(f)
+	if len(b) > wire.MaxRouteBytes {
 		return kgo.RecordHeader{}, courier.ErrTooLarge
 	}
 	return kgo.RecordHeader{Key: routeHeader, Value: b}, err
@@ -301,16 +292,16 @@ func (r *replyRouter) routeHeader(e courier.Envelope) (kgo.RecordHeader, error) 
 
 // Decode binary routing metadata by value to avoid a heap-allocated route
 // container; its strings own storage independently of the codec scratch buffer.
-func (r *replyRouter) decodeRoute(b []byte) (forwardRoute, error) {
-	if len(b) > maxRouteBytes {
-		return forwardRoute{}, fmt.Errorf("routing header too large")
+func (r *replyRouter) decodeRoute(b []byte) (wire.Route, error) {
+	if len(b) > wire.MaxRouteBytes {
+		return wire.Route{}, fmt.Errorf("routing header too large")
 	}
-	if !bytes.HasPrefix(b, binaryRoutePrefix) {
-		return forwardRoute{}, fmt.Errorf("invalid binary route prefix")
+	if !bytes.HasPrefix(b, wire.RoutePrefix) {
+		return wire.Route{}, fmt.Errorf("invalid binary route prefix")
 	}
 	f, err, canonical := r.decodeCanonicalRoute(b)
 	if !canonical {
-		f, err = unmarshalBinaryRoute(b)
+		f, err = wire.DecodeRoute(b)
 	}
 	if err != nil {
 		return f, err
@@ -325,7 +316,7 @@ func (r *replyRouter) decodeRoute(b []byte) (forwardRoute, error) {
 	}
 	return f, nil
 }
-func (r *replyRouter) deliver(f forwardRoute, data []byte) int {
+func (r *replyRouter) deliver(f wire.Route, data []byte) int {
 	view, err := courier.DecodeReplyEnvelopeView(data, r.t.opts.MaxFrameBytes)
 	if err != nil {
 		return http.StatusBadRequest
@@ -335,7 +326,7 @@ func (r *replyRouter) deliver(f forwardRoute, data []byte) int {
 
 // Validate before ownership allocation; duplicates, expired replies and closed
 // inboxes do not need copied strings or payloads.
-func (r *replyRouter) deliverView(f forwardRoute, data []byte, view courier.ReplyEnvelopeView) int {
+func (r *replyRouter) deliverView(f wire.Route, data []byte, view courier.ReplyEnvelopeView) int {
 	if time.Now().UnixNano() >= f.Expires {
 		return http.StatusGone
 	}
@@ -351,7 +342,7 @@ func (r *replyRouter) deliverView(f forwardRoute, data []byte, view courier.Repl
 
 // Compact batches omit metadata already present in the validated reply frame.
 // Instance and expiry remain explicit to reject restarted or expired targets.
-func (r *replyRouter) deliverCompact(m receivedBatchMessage) int {
+func (r *replyRouter) deliverCompact(m wire.ReceivedBatchMessage) int {
 	view, err := courier.DecodeReplyEnvelopeView(m.Data, r.t.opts.MaxFrameBytes)
 	if err != nil || len(m.Instance) == 0 || m.Expires <= 0 {
 		return http.StatusBadRequest
@@ -359,8 +350,8 @@ func (r *replyRouter) deliverCompact(m receivedBatchMessage) int {
 	// Keep the original routing-metadata budget even though the full header is
 	// omitted on this hop. This bounds identifiers retained by the dedup ring.
 	const routeFieldOverhead = 5*(3+4) + (3 + 4) + (3 + 8) + 1
-	routingBytes := len(binaryRoutePrefix) + routeFieldOverhead + len(r.endpoint) + len(m.Instance) + len(view.Session) + len(view.ID) + len(view.Topic)
-	if routingBytes > maxRouteBytes {
+	routingBytes := len(wire.RoutePrefix) + routeFieldOverhead + len(r.endpoint) + len(m.Instance) + len(view.Session) + len(view.ID) + len(view.Topic)
+	if routingBytes > wire.MaxRouteBytes {
 		return http.StatusBadRequest
 	}
 	if time.Now().UnixNano() >= m.Expires {

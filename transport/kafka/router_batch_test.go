@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -32,7 +33,7 @@ func TestBatchCompletionDoesNotWaitForLaterRequests(t *testing.T) {
 			<-ctx.Done()
 			return
 		}
-		w.Write(encodeBinaryStatuses([]int{204}))
+		w.Write(wire.EncodeStatuses([]int{204}))
 	}))
 	defer srv.Close()
 	r.client = srv.Client()
@@ -81,7 +82,7 @@ func TestBatchPerItemResultsAndReplay(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(r.serve))
 	defer srv.Close()
 	r.client = srv.Client()
-	messages := []batchMessage{{route.Instance, route.Expires, body}, {"old", route.Expires, body}, {"", route.Expires, body}}
+	messages := []wire.BatchMessage{{Instance: route.Instance, Expires: route.Expires, Data: body}, {Instance: "old", Expires: route.Expires, Data: body}, {Instance: "", Expires: route.Expires, Data: body}}
 	for i := 0; i < 2; i++ {
 		statuses := r.sendBatch(srv.URL, messages)
 		if len(statuses) != 3 || statuses[0] != 204 || statuses[1] != 409 || statuses[2] != 400 {
@@ -97,7 +98,7 @@ func TestBatchPerItemResultsAndReplay(t *testing.T) {
 	}
 	invalid.Reply.Topic = "wrong"
 	bad, _ := courier.EncodeEnvelope(invalid, courier.DefaultMaxFrameBytes)
-	statuses := r.sendBatch(srv.URL, []batchMessage{{route.Instance, route.Expires, bad}})
+	statuses := r.sendBatch(srv.URL, []wire.BatchMessage{{Instance: route.Instance, Expires: route.Expires, Data: bad}})
 	if statuses[0] != 400 || calls != 1 {
 		t.Fatalf("invalid reply delivered: %v", statuses)
 	}

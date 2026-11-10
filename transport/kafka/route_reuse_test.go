@@ -3,13 +3,14 @@ package kafka
 import (
 	"bytes"
 	"encoding/binary"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"testing"
 )
 
 func TestRouteFieldOrderAndOwnership(t *testing.T) {
 	r, f, _ := routerFixture(t)
 
-	old, err := marshalForwardRoute(f)
+	old, err := wire.EncodeRoute(f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,7 +18,7 @@ func TestRouteFieldOrderAndOwnership(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		other := f
 		other.ID = "different"
-		if _, err := marshalForwardRoute(other); err != nil {
+		if _, err := wire.EncodeRoute(other); err != nil {
 			t.Fatal(err)
 		}
 	}

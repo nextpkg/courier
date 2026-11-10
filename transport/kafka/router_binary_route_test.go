@@ -3,7 +3,7 @@ package kafka
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/binary"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,7 +12,7 @@ import (
 func TestBinaryRouteValidation(t *testing.T) {
 	r, f, _ := routerFixture(t)
 	{
-		b, err := marshalForwardRoute(f)
+		b, err := wire.EncodeRoute(f)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -21,7 +21,7 @@ func TestBinaryRouteValidation(t *testing.T) {
 			t.Fatalf("roundtrip: %+v %v", got, err)
 		}
 		got.ID = ""
-		bad, _ := marshalForwardRoute(got)
+		bad, _ := wire.EncodeRoute(got)
 		if _, err := r.decodeRoute(bad); err == nil {
 			t.Fatal("empty request ID accepted")
 		}
@@ -42,7 +42,7 @@ func TestBinaryRouteHTTPHeader(t *testing.T) {
 	r, f, b := routerFixture(t)
 	r.inbound = make(chan struct{}, 1)
 
-	hdr, err := marshalForwardRoute(f)
+	hdr, err := wire.EncodeRoute(f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,43 +52,6 @@ func TestBinaryRouteHTTPHeader(t *testing.T) {
 	r.serve(w, req)
 	if w.Code != http.StatusGone {
 		t.Fatalf("expected valid route but absent inbox, got %d", w.Code)
-	}
-}
-
-func TestBinaryRouteStringLengths(t *testing.T) {
-	_, f, _ := routerFixture(t)
-
-	encoded, err := marshalForwardRoute(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, size := range []uint32{0xffffffff, maxRouteBytes + 1, uint32(len(encoded))} {
-		bad := bytes.Clone(encoded)
-		// The first field is Endpoint: type byte, field ID, then string length.
-		binary.BigEndian.PutUint32(bad[len(binaryRoutePrefix)+3:], size)
-		if _, err := unmarshalBinaryRoute(bad); err == nil {
-			t.Fatalf("accepted invalid string length %d", size)
-		}
-	}
-}
-
-func TestBinaryRouteStringsOwnBytes(t *testing.T) {
-	_, f, _ := routerFixture(t)
-
-	encoded, err := marshalForwardRoute(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	decoded, err := unmarshalBinaryRoute(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	clear(encoded)
-	c := getRouteCodec()
-	c.b.Write(bytes.Repeat([]byte{'x'}, maxRouteBytes))
-	putRouteCodec(c)
-	if decoded != f {
-		t.Fatalf("route changed after input and codec reuse: got %+v, want %+v", decoded, f)
 	}
 }
 

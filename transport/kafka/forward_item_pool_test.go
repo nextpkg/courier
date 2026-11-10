@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"sync"
 	"testing"
 )
@@ -9,13 +10,13 @@ import (
 func TestForwardItemPoolCancellationIsolation(t *testing.T) {
 	pool := newForwardItemPool(1)
 	ctx, cancel := context.WithCancel(context.Background())
-	first := pool.acquire(ctx, batchMessage{Instance: "first", Expires: 1, Data: []byte("first data")})
+	first := pool.acquire(ctx, wire.BatchMessage{Instance: "first", Expires: 1, Data: []byte("first data")})
 	cancel()
 	first.release()
 	if len(pool.idle) != 0 {
 		t.Fatal("queued item reused before sender finished")
 	}
-	second := pool.acquire(context.Background(), batchMessage{Instance: "second", Expires: 2, Data: []byte("second data")})
+	second := pool.acquire(context.Background(), wire.BatchMessage{Instance: "second", Expires: 2, Data: []byte("second data")})
 	if first == second {
 		t.Fatal("pending sender lost ownership")
 	}
@@ -36,7 +37,7 @@ func TestForwardItemPoolCancellationIsolation(t *testing.T) {
 		t.Fatal(got)
 	}
 	second.release()
-	reused := pool.acquire(context.Background(), batchMessage{Instance: "third", Data: []byte("third data")})
+	reused := pool.acquire(context.Background(), wire.BatchMessage{Instance: "third", Data: []byte("third data")})
 	if reused != first {
 		t.Fatal("expected first released item")
 	}
@@ -58,7 +59,7 @@ func TestForwardItemPoolConcurrentCompletion(t *testing.T) {
 		go func(n int) {
 			defer workers.Done()
 			for i := 0; i < 100; i++ {
-				item := pool.acquire(context.Background(), batchMessage{Data: []byte{byte(n)}})
+				item := pool.acquire(context.Background(), wire.BatchMessage{Data: []byte{byte(n)}})
 				senders.Add(1)
 				if i%2 == 0 {
 					item.release()

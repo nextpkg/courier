@@ -1,5 +1,7 @@
 package kafka
 
+import "github.com/nextpkg/courier/transport/kafka/internal/wire"
+
 import "context"
 
 const maxCachedForwardItems = 1024
@@ -9,7 +11,7 @@ type forwardItemPool struct{ idle chan *forwardItem }
 func newForwardItemPool(window int) *forwardItemPool {
 	return &forwardItemPool{idle: make(chan *forwardItem, min(window, maxCachedForwardItems))}
 }
-func (p *forwardItemPool) acquire(ctx context.Context, message batchMessage) *forwardItem {
+func (p *forwardItemPool) acquire(ctx context.Context, message wire.BatchMessage) *forwardItem {
 	var item *forwardItem
 	if p != nil {
 		select {
@@ -39,7 +41,7 @@ func (item *forwardItem) release() {
 	case <-item.done:
 	default:
 	}
-	item.message = batchMessage{}
+	item.message = wire.BatchMessage{}
 	item.ctx = nil
 	if item.pool != nil {
 		select {

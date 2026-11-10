@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,7 +28,7 @@ func TestParallelBatchOverlapAndCancellation(t *testing.T) {
 		if err != nil {
 			return
 		}
-		messages, err := decodeBinaryBatch(raw, 1024)
+		messages, err := wire.DecodeBatch(raw, 1024)
 		if err != nil {
 			t.Error(err)
 			return
@@ -46,7 +47,7 @@ func TestParallelBatchOverlapAndCancellation(t *testing.T) {
 		for i := range statuses {
 			statuses[i] = 204
 		}
-		_, _ = w.Write(encodeBinaryStatuses(statuses))
+		_, _ = w.Write(wire.EncodeStatuses(statuses))
 	}))
 	defer srv.Close()
 	defer close(release)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"net/url"
 )
 
@@ -57,8 +58,8 @@ func (r *replyRouter) validateRouteEndpoint(endpoint string) error {
 // encoding without copying it through a Thrift scratch buffer. Any other shape
 // falls back to the full decoder, retaining reordered/unknown-field support and
 // malformed-frame checks. Prefix and total-size checks run in decodeRoute first.
-func (r *replyRouter) decodeCanonicalRoute(data []byte) (forwardRoute, error, bool) {
-	at := len(binaryRoutePrefix)
+func (r *replyRouter) decodeCanonicalRoute(data []byte) (wire.Route, error, bool) {
+	at := len(wire.RoutePrefix)
 	takeString := func(id byte) ([]byte, bool) {
 		if len(data)-at < 7 || data[at] != 11 || data[at+1] != 0 || data[at+2] != id {
 			return nil, false
@@ -74,39 +75,39 @@ func (r *replyRouter) decodeCanonicalRoute(data []byte) (forwardRoute, error, bo
 	}
 	endpoint, ok := takeString(1)
 	if !ok {
-		return forwardRoute{}, nil, false
+		return wire.Route{}, nil, false
 	}
 	instance, ok := takeString(2)
 	if !ok {
-		return forwardRoute{}, nil, false
+		return wire.Route{}, nil, false
 	}
 	session, ok := takeString(3)
 	if !ok {
-		return forwardRoute{}, nil, false
+		return wire.Route{}, nil, false
 	}
 	prefix := data[:at]
 	id, ok := takeString(4)
 	if !ok {
-		return forwardRoute{}, nil, false
+		return wire.Route{}, nil, false
 	}
 	topic, ok := takeString(5)
 	if !ok {
-		return forwardRoute{}, nil, false
+		return wire.Route{}, nil, false
 	}
 	// I32 Partition, I64 Expires, and STOP must consume the complete frame.
 	if len(data)-at != 19 || data[at] != 8 || data[at+1] != 0 || data[at+2] != 6 || data[at+7] != 10 || data[at+8] != 0 || data[at+9] != 7 || data[at+18] != 0 {
-		return forwardRoute{}, nil, false
+		return wire.Route{}, nil, false
 	}
 	partition := int32(binary.BigEndian.Uint32(data[at+3 : at+7]))
 	expires := int64(binary.BigEndian.Uint64(data[at+10 : at+18]))
 	if len(instance) == 0 || len(session) == 0 || len(id) == 0 || !bytes.Equal(topic, []byte(r.t.opts.ReplyTopic)) || partition < 0 || expires <= 0 {
-		return forwardRoute{}, fmt.Errorf("invalid routing fields"), true
+		return wire.Route{}, fmt.Errorf("invalid routing fields"), true
 	}
 	identity, err := r.routeIdentity(prefix, endpoint, instance, session)
 	if err != nil {
-		return forwardRoute{}, err, true
+		return wire.Route{}, err, true
 	}
 	// ID has independent storage: the dedup ring may retain it after this route
 	// completes. Stable strings are cache-owned and never alias receive buffers.
-	return forwardRoute{Endpoint: identity.endpoint, Instance: identity.instance, Session: identity.session, ID: string(id), Topic: r.t.opts.ReplyTopic, Partition: partition, Expires: expires}, nil, true
+	return wire.Route{Endpoint: identity.endpoint, Instance: identity.instance, Session: identity.session, ID: string(id), Topic: r.t.opts.ReplyTopic, Partition: partition, Expires: expires}, nil, true
 }

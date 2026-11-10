@@ -1,4 +1,4 @@
-package kafka
+package wire
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-var binaryRoutePrefix = []byte{0x80, 'R', 'T', 1}
+var RoutePrefix = []byte{0x80, 'R', 'T', 1}
 
 type routeCodec struct {
 	b *thrift.TMemoryBuffer
@@ -22,7 +22,7 @@ func getRouteCodec() *routeCodec {
 	c, _ := routeCodecs.Get().(*routeCodec)
 	if c == nil {
 		b := thrift.NewTMemoryBufferLen(256)
-		c = &routeCodec{b: b, p: thrift.NewTBinaryProtocolConf(b, &thrift.TConfiguration{MaxMessageSize: maxRouteBytes, MaxFrameSize: maxRouteBytes})}
+		c = &routeCodec{b: b, p: thrift.NewTBinaryProtocolConf(b, &thrift.TConfiguration{MaxMessageSize: MaxRouteBytes, MaxFrameSize: MaxRouteBytes})}
 	}
 	c.b.Reset()
 	return c
@@ -41,12 +41,12 @@ func (c *routeCodec) readString(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if size < 0 || size > maxRouteBytes || int(size) > c.b.Len() {
+	if size < 0 || size > MaxRouteBytes || int(size) > c.b.Len() {
 		return "", fmt.Errorf("invalid route string length")
 	}
 	return string(c.b.Next(int(size))), nil
 }
-func marshalForwardRoute(f forwardRoute) ([]byte, error) {
+func EncodeRoute(f Route) ([]byte, error) {
 	c := getRouteCodec()
 	defer putRouteCodec(c)
 	b, err := encodeBinaryRoute(c, f)
@@ -57,10 +57,10 @@ func marshalForwardRoute(f forwardRoute) ([]byte, error) {
 }
 
 // The returned view is valid only while the caller owns c.
-func encodeBinaryRoute(c *routeCodec, f forwardRoute) ([]byte, error) {
+func encodeBinaryRoute(c *routeCodec, f Route) ([]byte, error) {
 	p := c.p
 	ctx := context.Background()
-	c.b.Write(binaryRoutePrefix)
+	c.b.Write(RoutePrefix)
 	if err := p.WriteStructBegin(ctx, "ReplyRoute"); err != nil {
 		return nil, err
 	}
@@ -133,18 +133,24 @@ func encodeBinaryRoute(c *routeCodec, f forwardRoute) ([]byte, error) {
 	if err := p.WriteStructEnd(ctx); err != nil {
 		return nil, err
 	}
-	if c.b.Len() > maxRouteBytes {
+	if c.b.Len() > MaxRouteBytes {
 		return nil, courier.ErrTooLarge
 	}
 	return c.b.Bytes(), nil
 }
-func unmarshalBinaryRoute(data []byte) (forwardRoute, error) {
-	f := forwardRoute{}
+func DecodeRoute(data []byte) (Route, error) {
+	if len(data) > MaxRouteBytes {
+		return Route{}, fmt.Errorf("routing header too large")
+	}
+	if !bytes.HasPrefix(data, RoutePrefix) {
+		return Route{}, fmt.Errorf("invalid binary route prefix")
+	}
+	f := Route{}
 	c := getRouteCodec()
 	defer putRouteCodec(c)
 	p := c.p
 	ctx := context.Background()
-	c.b.Write(data[len(binaryRoutePrefix):])
+	c.b.Write(data[len(RoutePrefix):])
 	if _, err := p.ReadStructBegin(ctx); err != nil {
 		return f, err
 	}
@@ -244,4 +250,16 @@ func unmarshalBinaryRoute(data []byte) (forwardRoute, error) {
 		return f, fmt.Errorf("incomplete or trailing route")
 	}
 	return f, nil
+}
+
+const MaxRouteBytes = 768
+
+type Route struct {
+	Endpoint  string
+	Instance  string
+	Session   string
+	ID        string
+	Topic     string
+	Partition int32
+	Expires   int64
 }

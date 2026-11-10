@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"io"
 	"net"
 	"net/http"
@@ -122,7 +123,7 @@ func (s *rpcPeer) handle(c *rpcConn) {
 		var batchResults []byte
 		if name == "ForwardBatch" {
 			status, batchResults = s.r.deliverBinaryBatch(data)
-		} else if len(hdr) > maxRouteBytes || len(data) > s.r.t.opts.MaxFrameBytes {
+		} else if len(hdr) > wire.MaxRouteBytes || len(data) > s.r.t.opts.MaxFrameBytes {
 			status = 413
 		} else {
 			f, err := s.r.decodeRoute(hdr)

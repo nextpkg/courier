@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"net"
 	"reflect"
 	"testing"
@@ -25,7 +26,7 @@ func TestBinaryBatchWireUnsignedPartialReplay(t *testing.T) {
 	done := make(chan struct{})
 	go func() { peer.serve(ln); close(done) }()
 	defer func() { peer.close(); <-done }()
-	msgs := []batchMessage{{f.Instance, f.Expires, b}, {"old", f.Expires, b}, {"", f.Expires, b}, {f.Instance, f.Expires, b}}
+	msgs := []wire.BatchMessage{{Instance: f.Instance, Expires: f.Expires, Data: b}, {Instance: "old", Expires: f.Expires, Data: b}, {Instance: "", Expires: f.Expires, Data: b}, {Instance: f.Instance, Expires: f.Expires, Data: b}}
 	endpoint := "http://" + ln.Addr().String()
 	if got := r.sendBatch(endpoint, msgs); !reflect.DeepEqual(got, []int{204, 409, 400, 204}) {
 		t.Fatal(got)
@@ -36,7 +37,7 @@ func TestBinaryBatchWireUnsignedPartialReplay(t *testing.T) {
 	for _, tc := range []struct {
 		body []byte
 		want int
-	}{{encodeBinaryBatch(msgs), 200}, {append(encodeBinaryBatch(msgs), 1), 400}} {
+	}{{wire.EncodeBatch(msgs), 200}, {append(wire.EncodeBatch(msgs), 1), 400}} {
 		result, err := peer.forward(context.Background(), ln.Addr().String(), "ForwardBatch", nil, tc.body, r.batchLimit())
 		if err != nil {
 			t.Fatal(err)
@@ -53,22 +54,5 @@ func TestBinaryBatchWireUnsignedPartialReplay(t *testing.T) {
 	}
 	if got := r.sendBatch(endpoint, msgs[:1]); !reflect.DeepEqual(got, []int{410}) {
 		t.Fatal(got)
-	}
-}
-func TestBinaryBatchRejectsMalformedFrames(t *testing.T) {
-	good := encodeBinaryBatch([]batchMessage{{"instance", 123, []byte("body")}})
-	for i := 0; i < len(good); i++ {
-		if _, err := decodeBinaryBatch(good[:i], 1024); err == nil {
-			t.Fatalf("accepted truncated byte %d", i)
-		}
-	}
-	if _, err := decodeBinaryBatch(good, 1); err == nil {
-		t.Fatal("accepted oversized item")
-	}
-	if _, err := decodeBinaryBatch(append(good, 0), 1024); err == nil {
-		t.Fatal("accepted trailing data")
-	}
-	if _, err := decodeBinaryStatuses([]byte{0}, 1); err == nil {
-		t.Fatal("accepted partial status")
 	}
 }

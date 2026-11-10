@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +16,7 @@ import (
 	"time"
 )
 
-func routerFixture(t *testing.T) (*replyRouter, forwardRoute, []byte) {
+func routerFixture(t *testing.T) (*replyRouter, wire.Route, []byte) {
 	t.Helper()
 	opts, err := normalize(Options{Brokers: []string{"localhost:9092"}})
 	if err != nil {
@@ -24,7 +25,7 @@ func routerFixture(t *testing.T) (*replyRouter, forwardRoute, []byte) {
 	ctx := context.Background()
 	tr := &Transport{opts: opts, ctx: ctx, subs: map[*subscription]bool{}}
 	r := &replyRouter{t: tr, opts: ReplyRouterOptions{AllowInsecureHTTP: true, MaxReplyAge: time.Second, DedupEntries: 16}, instance: "new", endpoint: "http://127.0.0.1:1", sessions: map[string]*routedInbox{}, stale: map[string]int64{}}
-	f := forwardRoute{Endpoint: r.endpoint, Instance: "new", Session: "s", ID: "id", Topic: opts.ReplyTopic, Expires: time.Now().Add(time.Second).UnixNano()}
+	f := wire.Route{Endpoint: r.endpoint, Instance: "new", Session: "s", ID: "id", Topic: opts.ReplyTopic, Expires: time.Now().Add(time.Second).UnixNano()}
 	b, err := courier.EncodeEnvelope(courier.Envelope{Version: 1, Kind: "response", Service: "S", Method: "M", ID: "id", Session: "s", Reply: courier.Route{Topic: opts.ReplyTopic}}, courier.DefaultMaxFrameBytes)
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +74,7 @@ func TestRouterValidationAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	parsed.Endpoint = "http://127.0.0.1:9999/path"
-	invalid, _ := marshalForwardRoute(parsed)
+	invalid, _ := wire.EncodeRoute(parsed)
 	if _, err := r.decodeRoute(invalid); err == nil {
 		t.Fatal("invalid endpoint accepted")
 	}
@@ -83,7 +84,7 @@ func TestRouterValidationAndExpiry(t *testing.T) {
 	f.Endpoint = srv.URL
 	f.Expires = time.Now().Add(80 * time.Millisecond).UnixNano()
 	r.client = srv.Client()
-	raw, _ := marshalForwardRoute(f)
+	raw, _ := wire.EncodeRoute(f)
 	record := &kgo.Record{Topic: f.Topic, Value: b, Headers: []kgo.RecordHeader{{Key: routeHeader, Value: raw}}}
 	if err := r.forward(context.Background(), record); err != nil {
 		t.Fatal(err)
@@ -94,7 +95,7 @@ func TestRouterValidationAndExpiry(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	f.Expires = time.Now().Add(time.Second).UnixNano()
-	raw, _ = marshalForwardRoute(f)
+	raw, _ = wire.EncodeRoute(f)
 	record.Headers[0].Value = raw
 	if err := r.forward(ctx, record); err == nil {
 		t.Fatal("shutdown must not acknowledge unfinished reply")
@@ -115,7 +116,7 @@ func TestRouterRejectsMissingRouteHTTP(t *testing.T) {
 func TestRouterRejectsOversizedRoutingHeader(t *testing.T) {
 	r, _, b := routerFixture(t)
 	e, _ := courier.DecodeEnvelope(b, courier.DefaultMaxFrameBytes)
-	e.Session = strings.Repeat("s", maxRouteBytes)
+	e.Session = strings.Repeat("s", wire.MaxRouteBytes)
 	if _, err := r.routeHeader(e); err != courier.ErrTooLarge {
 		t.Fatalf("oversized header accepted: %v", err)
 	}

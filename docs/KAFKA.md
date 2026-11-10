@@ -276,3 +276,7 @@ waiters. No linger timer or unbounded send queue is introduced.
 ## 对象复用与关闭
 
 发布完成槽缓存最多 min(PublishBuffers,1024) 个空闲对象，调用方和 SDK 回调各持一个引用；取消仅释放调用方，迟到回调结束后才能清除结果并回池。转发条目遵循相同的等待方/发送方双引用规则，清除消息与 context 后复用。缓存满时交给 GC；公开 Future 不池化，也不调整全局 GC。关闭时解除缓存引用，在途操作保留必要所有权。
+
+## 内部代码边界
+
+`transport/kafka/internal/wire` 负责路由头、转发批次和状态列表的二进制编码、结构校验及编解码缓冲复用，不依赖 Transport 或回复路由器。实例、会话、期限、目标匹配等交付语义，以及身份缓存、批调度、确认和 offset 提交仍由 `kafka` 包管理。

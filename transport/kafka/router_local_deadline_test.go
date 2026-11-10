@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"testing"
 	"time"
@@ -31,7 +32,7 @@ func TestLocalForwardDeadlineAndCancellation(t *testing.T) {
 				ctx, cancel = context.WithDeadline(ctx, time.Now().Add(-time.Second))
 				defer cancel()
 			}
-			raw, _ := marshalForwardRoute(f)
+			raw, _ := wire.EncodeRoute(f)
 			err = r.forward(ctx, &kgo.Record{Topic: f.Topic, Value: b, Headers: []kgo.RecordHeader{{Key: routeHeader, Value: raw}}})
 			if name == "cancelled" || name == "parent-expired" {
 				if !errors.Is(err, ctx.Err()) {

@@ -1,4 +1,4 @@
-package kafka
+package wire
 
 import (
 	"bytes"
@@ -14,21 +14,21 @@ func TestBatchBufferConcurrentOwnership(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			for i := 0; i < 100; i++ {
-				msg := []batchMessage{{Instance: fmt.Sprintf("instance-%d-%d", id, i), Expires: 123, Data: bytes.Repeat([]byte{byte(id)}, 4096)}}
-				expected := encodeBinaryBatch(msg)
-				first := borrowBinaryBatch(msg)
-				second := borrowBinaryBatch([]batchMessage{{Instance: "other", Expires: 123, Data: []byte("body")}})
-				releaseBinaryBatch(second)
+				msg := []BatchMessage{{Instance: fmt.Sprintf("instance-%d-%d", id, i), Expires: 123, Data: bytes.Repeat([]byte{byte(id)}, 4096)}}
+				expected := EncodeBatch(msg)
+				first := BorrowBatch(msg)
+				second := BorrowBatch([]BatchMessage{{Instance: "other", Expires: 123, Data: []byte("body")}})
+				ReleaseBatch(second)
 				msg[0].Instance = "changed"
 				clear(msg[0].Data)
-				if !bytes.Equal(first.data, expected) {
+				if !bytes.Equal(first.Data, expected) {
 					t.Error("active batch changed while another batch or input was reused")
 				}
-				decoded, err := decodeBinaryBatch(first.data, 8192)
+				decoded, err := DecodeBatch(first.Data, 8192)
 				if err != nil || len(decoded) != 1 || len(decoded[0].Data) != 4096 {
 					t.Errorf("invalid encoded batch: %v", err)
 				}
-				releaseBinaryBatch(first)
+				ReleaseBatch(first)
 			}
 		}(worker)
 	}
@@ -36,14 +36,14 @@ func TestBatchBufferConcurrentOwnership(t *testing.T) {
 }
 
 func BenchmarkBinaryBatchBuffer(b *testing.B) {
-	messages := make([]batchMessage, 32)
+	messages := make([]BatchMessage, 32)
 	for i := range messages {
-		messages[i] = batchMessage{Instance: "instance", Expires: 123, Data: bytes.Repeat([]byte("d"), 330)}
+		messages[i] = BatchMessage{Instance: "instance", Expires: 123, Data: bytes.Repeat([]byte("d"), 330)}
 	}
 	b.Run("allocate", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			v := encodeBinaryBatch(messages)
+			v := EncodeBatch(messages)
 			if len(v) == 0 {
 				b.Fatal("empty batch")
 			}
@@ -52,11 +52,11 @@ func BenchmarkBinaryBatchBuffer(b *testing.B) {
 	b.Run("reuse", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			v := borrowBinaryBatch(messages)
-			if len(v.data) == 0 {
+			v := BorrowBatch(messages)
+			if len(v.Data) == 0 {
 				b.Fatal("empty batch")
 			}
-			releaseBinaryBatch(v)
+			ReleaseBatch(v)
 		}
 	})
 }
