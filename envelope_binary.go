@@ -22,30 +22,30 @@ func encodeBinaryEnvelope(e Envelope, limit int) ([]byte, error) {
 		return nil, err
 	}
 	w := binwrite.Writer{Protocol: p, Context: context.Background()}
-	w.Field(1, thrift.I32)
+	w.Field(envelopeFieldVersion, thrift.I32)
 	w.Int32(int32(e.Version))
-	w.Field(2, thrift.STRING)
+	w.Field(envelopeFieldKind, thrift.STRING)
 	w.String(e.Kind)
-	w.Field(3, thrift.STRING)
+	w.Field(envelopeFieldService, thrift.STRING)
 	w.String(e.Service)
-	w.Field(4, thrift.STRING)
+	w.Field(envelopeFieldMethod, thrift.STRING)
 	w.String(e.Method)
-	w.Field(5, thrift.STRING)
+	w.Field(envelopeFieldID, thrift.STRING)
 	w.String(e.ID)
-	w.Field(6, thrift.STRING)
+	w.Field(envelopeFieldSession, thrift.STRING)
 	w.String(e.Session)
-	w.Field(7, thrift.I64)
+	w.Field(envelopeFieldDeadline, thrift.I64)
 	w.Int64(e.Deadline)
-	w.Field(8, thrift.STRING)
+	w.Field(envelopeFieldReplyTopic, thrift.STRING)
 	w.String(e.Reply.Topic)
-	w.Field(9, thrift.I32)
+	w.Field(envelopeFieldReplyPartition, thrift.I32)
 	w.Int32(e.Reply.Partition)
-	w.Field(10, thrift.STRING)
+	w.Field(envelopeFieldPayload, thrift.STRING)
 	w.Binary(e.Payload)
 	if e.Error != nil {
-		w.Field(11, thrift.STRING)
+		w.Field(envelopeFieldErrorCode, thrift.STRING)
 		w.String(e.Error.Code)
-		w.Field(12, thrift.STRING)
+		w.Field(envelopeFieldErrorMessage, thrift.STRING)
 		w.String(e.Error.Message)
 	}
 	w.Stop()
@@ -75,15 +75,15 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 		if ty == thrift.STOP {
 			break
 		}
-		if id >= 1 && id <= 12 {
-			mask := uint16(1) << uint(id-1)
+		if id >= envelopeFieldVersion && id <= envelopeFieldErrorMessage {
+			mask := uint16(1) << uint(id-envelopeFieldVersion)
 			if seen&mask != 0 {
 				return Envelope{}, fmt.Errorf("courier: duplicate envelope field")
 			}
 			seen |= mask
 		}
 		switch id {
-		case 1:
+		case envelopeFieldVersion:
 			if ty != thrift.I32 {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Version")
 			}
@@ -92,7 +92,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 				return Envelope{}, err
 			}
 			e.Version = int(v)
-		case 2:
+		case envelopeFieldKind:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Kind")
 			}
@@ -101,7 +101,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 				return Envelope{}, err
 			}
 			e.Kind = v
-		case 3:
+		case envelopeFieldService:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Service")
 			}
@@ -110,7 +110,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 				return Envelope{}, err
 			}
 			e.Service = v
-		case 4:
+		case envelopeFieldMethod:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Method")
 			}
@@ -119,7 +119,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 				return Envelope{}, err
 			}
 			e.Method = v
-		case 5:
+		case envelopeFieldID:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for ID")
 			}
@@ -128,7 +128,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 				return Envelope{}, err
 			}
 			e.ID = v
-		case 6:
+		case envelopeFieldSession:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Session")
 			}
@@ -137,7 +137,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 				return Envelope{}, err
 			}
 			e.Session = v
-		case 7:
+		case envelopeFieldDeadline:
 			if ty != thrift.I64 {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Deadline")
 			}
@@ -146,7 +146,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 				return Envelope{}, err
 			}
 			e.Deadline = v
-		case 8:
+		case envelopeFieldReplyTopic:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for ReplyTopic")
 			}
@@ -155,7 +155,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 				return Envelope{}, err
 			}
 			e.Reply.Topic = v
-		case 9:
+		case envelopeFieldReplyPartition:
 			if ty != thrift.I32 {
 				return Envelope{}, fmt.Errorf("courier: invalid type for ReplyPartition")
 			}
@@ -164,7 +164,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 				return Envelope{}, err
 			}
 			e.Reply.Partition = v
-		case 10:
+		case envelopeFieldPayload:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Payload")
 			}
@@ -173,7 +173,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 				return Envelope{}, err
 			}
 			e.Payload = v
-		case 11:
+		case envelopeFieldErrorCode:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for ErrorCode")
 			}
@@ -185,7 +185,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 				e.Error = &RPCError{}
 			}
 			e.Error.Code = v
-		case 12:
+		case envelopeFieldErrorMessage:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for ErrorMessage")
 			}
@@ -209,7 +209,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 	if err := p.ReadStructEnd(ctx); err != nil {
 		return Envelope{}, err
 	}
-	if b.Len() != 0 || seen&0x1ff != 0x1ff || (seen&(3<<10) != 0 && seen&(3<<10) != (3<<10)) {
+	if b.Len() != 0 || seen&envelopeRequiredFields != envelopeRequiredFields || (seen&envelopeErrorFields != 0 && seen&envelopeErrorFields != envelopeErrorFields) {
 		return Envelope{}, fmt.Errorf("courier: incomplete or trailing binary envelope")
 	}
 	if e.Version != ProtocolVersion || e.ID == "" || e.Session == "" || e.Service == "" || e.Method == "" || (e.Kind != "request" && e.Kind != "response") {

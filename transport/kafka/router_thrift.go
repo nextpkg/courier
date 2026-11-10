@@ -18,6 +18,14 @@ import (
 	"time"
 )
 
+// Argument IDs are defined by the Forward/ForwardBatch methods. Thrift uses
+// field zero for a successful method result; these are not protocol type tags.
+const (
+	forwardRouteFieldID   int16 = 1
+	forwardDataFieldID    int16 = 2
+	forwardSuccessFieldID int16 = 0
+)
+
 type rpcConn struct {
 	net.Conn
 	p *thrift.TBinaryProtocol
@@ -105,7 +113,7 @@ func (s *rpcPeer) handle(c *rpcConn) {
 			if typ == thrift.STOP {
 				break
 			}
-			if typ != thrift.STRING || id < 1 || id > 2 {
+			if typ != thrift.STRING || id < forwardRouteFieldID || id > forwardDataFieldID {
 				return
 			}
 			value, err := readFramedBinary(ctx, c.p, s.r.batchLimit()+4096)
@@ -121,7 +129,7 @@ func (s *rpcPeer) handle(c *rpcConn) {
 			return
 		}
 		status := http.StatusBadRequest
-		hdr, data := fields[1], fields[2]
+		hdr, data := fields[forwardRouteFieldID], fields[forwardDataFieldID]
 		var batchResults []byte
 		if name == "ForwardBatch" {
 			status, batchResults = s.r.deliverBinaryBatch(data)
@@ -274,7 +282,7 @@ func (s *rpcPeer) forward(ctx context.Context, host, method string, route, body 
 	if err != nil {
 		return nil, err
 	}
-	if id != 0 {
+	if id != forwardSuccessFieldID {
 		return nil, fmt.Errorf("invalid result field")
 	}
 	var status int32
@@ -322,9 +330,9 @@ func (s *rpcPeer) forward(ctx context.Context, host, method string, route, body 
 // completion stay with the connection owner.
 func writeForwardArgs(ctx context.Context, p *thrift.TBinaryProtocol, route, body []byte) error {
 	w := binwrite.Writer{Protocol: p, Context: ctx}
-	w.Field(1, thrift.STRING)
+	w.Field(forwardRouteFieldID, thrift.STRING)
 	w.Binary(route)
-	w.Field(2, thrift.STRING)
+	w.Field(forwardDataFieldID, thrift.STRING)
 	w.Binary(body)
 	w.Stop()
 	return w.Err
@@ -334,10 +342,10 @@ func writeForwardResult(ctx context.Context, p *thrift.TBinaryProtocol, batch bo
 	if batch {
 		result := binary.BigEndian.AppendUint32(make([]byte, 0, 4+len(results)), uint32(status))
 		result = append(result, results...)
-		w.Field(0, thrift.STRING)
+		w.Field(forwardSuccessFieldID, thrift.STRING)
 		w.Binary(result)
 	} else {
-		w.Field(0, thrift.I32)
+		w.Field(forwardSuccessFieldID, thrift.I32)
 		w.Int32(int32(status))
 	}
 	w.Stop()

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/apache/thrift/lib/go/thrift"
 )
 
 // ReplyEnvelopeView borrows immutable bytes from the complete input frame.
@@ -42,8 +43,8 @@ type envelopeCursor struct {
 	at   int
 }
 
-func (c *envelopeCursor) fixed(id, typ byte, n int) ([]byte, bool) {
-	if len(c.data)-c.at < n+3 || c.data[c.at] != typ || c.data[c.at+1] != 0 || c.data[c.at+2] != id {
+func (c *envelopeCursor) fixed(id byte, typ thrift.TType, n int) ([]byte, bool) {
+	if len(c.data)-c.at < n+3 || c.data[c.at] != byte(typ) || c.data[c.at+1] != 0 || c.data[c.at+2] != id {
 		return nil, false
 	}
 	c.at += 3
@@ -52,7 +53,7 @@ func (c *envelopeCursor) fixed(id, typ byte, n int) ([]byte, bool) {
 	return v, true
 }
 func (c *envelopeCursor) blob(id byte) ([]byte, bool) {
-	length, ok := c.fixed(id, 11, 4)
+	length, ok := c.fixed(id, thrift.STRING, 4)
 	if !ok {
 		return nil, false
 	}
@@ -98,47 +99,47 @@ func DecodeReplyEnvelopeView(data []byte, limit int) (ReplyEnvelopeView, error) 
 func canonicalReplyView(data []byte) (ReplyEnvelopeView, error, bool) {
 	c := envelopeCursor{data: data, at: len(binaryEnvelopePrefix)}
 	var v ReplyEnvelopeView
-	version, ok := c.fixed(1, 8, 4)
+	version, ok := c.fixed(envelopeFieldVersion, thrift.I32, 4)
 	if !ok {
 		return v, nil, false
 	}
-	kind, ok := c.blob(2)
+	kind, ok := c.blob(envelopeFieldKind)
 	if !ok {
 		return v, nil, false
 	}
-	if v.Service, ok = c.blob(3); !ok {
+	if v.Service, ok = c.blob(envelopeFieldService); !ok {
 		return v, nil, false
 	}
-	if v.Method, ok = c.blob(4); !ok {
+	if v.Method, ok = c.blob(envelopeFieldMethod); !ok {
 		return v, nil, false
 	}
-	if v.ID, ok = c.blob(5); !ok {
+	if v.ID, ok = c.blob(envelopeFieldID); !ok {
 		return v, nil, false
 	}
-	if v.Session, ok = c.blob(6); !ok {
+	if v.Session, ok = c.blob(envelopeFieldSession); !ok {
 		return v, nil, false
 	}
-	deadline, ok := c.fixed(7, 10, 8)
+	deadline, ok := c.fixed(envelopeFieldDeadline, thrift.I64, 8)
 	if !ok {
 		return v, nil, false
 	}
 	v.Deadline = int64(binary.BigEndian.Uint64(deadline))
-	if v.Topic, ok = c.blob(8); !ok {
+	if v.Topic, ok = c.blob(envelopeFieldReplyTopic); !ok {
 		return v, nil, false
 	}
-	partition, ok := c.fixed(9, 8, 4)
+	partition, ok := c.fixed(envelopeFieldReplyPartition, thrift.I32, 4)
 	if !ok {
 		return v, nil, false
 	}
 	v.Partition = int32(binary.BigEndian.Uint32(partition))
-	if v.Payload, ok = c.blob(10); !ok {
+	if v.Payload, ok = c.blob(envelopeFieldPayload); !ok {
 		return v, nil, false
 	}
 	if c.at < len(data) && data[c.at] != 0 {
-		if v.ErrorCode, ok = c.blob(11); !ok {
+		if v.ErrorCode, ok = c.blob(envelopeFieldErrorCode); !ok {
 			return v, nil, false
 		}
-		if v.ErrorMessage, ok = c.blob(12); !ok {
+		if v.ErrorMessage, ok = c.blob(envelopeFieldErrorMessage); !ok {
 			return v, nil, false
 		}
 		v.HasError = true

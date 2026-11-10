@@ -61,19 +61,19 @@ func EncodeRoute(f Route) ([]byte, error) {
 func encodeBinaryRoute(c *routeCodec, f Route) ([]byte, error) {
 	c.b.Write(RoutePrefix)
 	w := binwrite.Writer{Protocol: c.p, Context: context.Background()}
-	w.Field(1, thrift.STRING)
+	w.Field(RouteFieldEndpoint, thrift.STRING)
 	w.String(f.Endpoint)
-	w.Field(2, thrift.STRING)
+	w.Field(RouteFieldInstance, thrift.STRING)
 	w.String(f.Instance)
-	w.Field(3, thrift.STRING)
+	w.Field(RouteFieldSession, thrift.STRING)
 	w.String(f.Session)
-	w.Field(4, thrift.STRING)
+	w.Field(RouteFieldID, thrift.STRING)
 	w.String(f.ID)
-	w.Field(5, thrift.STRING)
+	w.Field(RouteFieldTopic, thrift.STRING)
 	w.String(f.Topic)
-	w.Field(6, thrift.I32)
+	w.Field(RouteFieldPartition, thrift.I32)
 	w.Int32(f.Partition)
-	w.Field(7, thrift.I64)
+	w.Field(RouteFieldExpires, thrift.I64)
 	w.Int64(f.Expires)
 	w.Stop()
 	if w.Err != nil {
@@ -110,15 +110,15 @@ func DecodeRoute(data []byte) (Route, error) {
 		if ty == thrift.STOP {
 			break
 		}
-		if id >= 1 && id <= 7 {
-			mask := uint16(1) << uint(id-1)
+		if id >= RouteFieldEndpoint && id <= RouteFieldExpires {
+			mask := uint16(1) << uint(id-RouteFieldEndpoint)
 			if seen&mask != 0 {
 				return f, fmt.Errorf("duplicate route field")
 			}
 			seen |= mask
 		}
 		switch id {
-		case 1:
+		case RouteFieldEndpoint:
 			if ty != thrift.STRING {
 				return f, fmt.Errorf("invalid route field type")
 			}
@@ -127,7 +127,7 @@ func DecodeRoute(data []byte) (Route, error) {
 				return f, err
 			}
 			f.Endpoint = v
-		case 2:
+		case RouteFieldInstance:
 			if ty != thrift.STRING {
 				return f, fmt.Errorf("invalid route field type")
 			}
@@ -136,7 +136,7 @@ func DecodeRoute(data []byte) (Route, error) {
 				return f, err
 			}
 			f.Instance = v
-		case 3:
+		case RouteFieldSession:
 			if ty != thrift.STRING {
 				return f, fmt.Errorf("invalid route field type")
 			}
@@ -145,7 +145,7 @@ func DecodeRoute(data []byte) (Route, error) {
 				return f, err
 			}
 			f.Session = v
-		case 4:
+		case RouteFieldID:
 			if ty != thrift.STRING {
 				return f, fmt.Errorf("invalid route field type")
 			}
@@ -154,7 +154,7 @@ func DecodeRoute(data []byte) (Route, error) {
 				return f, err
 			}
 			f.ID = v
-		case 5:
+		case RouteFieldTopic:
 			if ty != thrift.STRING {
 				return f, fmt.Errorf("invalid route field type")
 			}
@@ -163,7 +163,7 @@ func DecodeRoute(data []byte) (Route, error) {
 				return f, err
 			}
 			f.Topic = v
-		case 6:
+		case RouteFieldPartition:
 			if ty != thrift.I32 {
 				return f, fmt.Errorf("invalid route field type")
 			}
@@ -172,7 +172,7 @@ func DecodeRoute(data []byte) (Route, error) {
 				return f, err
 			}
 			f.Partition = v
-		case 7:
+		case RouteFieldExpires:
 			if ty != thrift.I64 {
 				return f, fmt.Errorf("invalid route field type")
 			}
@@ -193,7 +193,7 @@ func DecodeRoute(data []byte) (Route, error) {
 	if err := p.ReadStructEnd(ctx); err != nil {
 		return f, err
 	}
-	if c.b.Len() != 0 || seen != 127 {
+	if c.b.Len() != 0 || seen != routeRequiredFields {
 		return f, fmt.Errorf("incomplete or trailing route")
 	}
 	return f, nil

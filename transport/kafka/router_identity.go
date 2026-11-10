@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"net/url"
 )
@@ -61,7 +62,7 @@ func (r *replyRouter) validateRouteEndpoint(endpoint string) error {
 func (r *replyRouter) decodeCanonicalRoute(data []byte) (wire.Route, error, bool) {
 	at := len(wire.RoutePrefix)
 	takeString := func(id byte) ([]byte, bool) {
-		if len(data)-at < 7 || data[at] != 11 || data[at+1] != 0 || data[at+2] != id {
+		if len(data)-at < 7 || data[at] != byte(thrift.STRING) || data[at+1] != 0 || data[at+2] != id {
 			return nil, false
 		}
 		n := uint64(binary.BigEndian.Uint32(data[at+3 : at+7]))
@@ -73,29 +74,29 @@ func (r *replyRouter) decodeCanonicalRoute(data []byte) (wire.Route, error, bool
 		at += int(n)
 		return value, true
 	}
-	endpoint, ok := takeString(1)
+	endpoint, ok := takeString(wire.RouteFieldEndpoint)
 	if !ok {
 		return wire.Route{}, nil, false
 	}
-	instance, ok := takeString(2)
+	instance, ok := takeString(wire.RouteFieldInstance)
 	if !ok {
 		return wire.Route{}, nil, false
 	}
-	session, ok := takeString(3)
+	session, ok := takeString(wire.RouteFieldSession)
 	if !ok {
 		return wire.Route{}, nil, false
 	}
 	prefix := data[:at]
-	id, ok := takeString(4)
+	id, ok := takeString(wire.RouteFieldID)
 	if !ok {
 		return wire.Route{}, nil, false
 	}
-	topic, ok := takeString(5)
+	topic, ok := takeString(wire.RouteFieldTopic)
 	if !ok {
 		return wire.Route{}, nil, false
 	}
 	// I32 Partition, I64 Expires, and STOP must consume the complete frame.
-	if len(data)-at != 19 || data[at] != 8 || data[at+1] != 0 || data[at+2] != 6 || data[at+7] != 10 || data[at+8] != 0 || data[at+9] != 7 || data[at+18] != 0 {
+	if len(data)-at != 19 || data[at] != byte(thrift.I32) || data[at+1] != 0 || data[at+2] != wire.RouteFieldPartition || data[at+7] != byte(thrift.I64) || data[at+8] != 0 || data[at+9] != wire.RouteFieldExpires || data[at+18] != byte(thrift.STOP) {
 		return wire.Route{}, nil, false
 	}
 	partition := int32(binary.BigEndian.Uint32(data[at+3 : at+7]))
