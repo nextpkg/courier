@@ -148,7 +148,7 @@ func (t *Transport) openInbox(parent context.Context, session string, receive fu
 		}
 		r.mu.Unlock()
 		inbox.mu.Lock()
-		inbox.mu.Unlock()
+		inbox.mu.Unlock() //nolint:staticcheck // SA2001: wait for the active reply callback before finishing the session.
 		s.finish()
 	}()
 	return s, nil

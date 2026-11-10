@@ -60,19 +60,19 @@ func (s *rpcPeer) track(c net.Conn) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		c.Close()
+		_ = c.Close()
 		return false
 	}
 	s.conns[c] = true
 	return true
 }
-func (s *rpcPeer) drop(c net.Conn) { c.Close(); s.mu.Lock(); delete(s.conns, c); s.mu.Unlock() }
+func (s *rpcPeer) drop(c net.Conn) { _ = c.Close(); s.mu.Lock(); delete(s.conns, c); s.mu.Unlock() }
 func (s *rpcPeer) close() {
 	s.mu.Lock()
 	s.closed = true
-	s.ln.Close()
+	_ = s.ln.Close()
 	for c := range s.conns {
-		c.Close()
+		_ = c.Close()
 	}
 	s.mu.Unlock()
 }
@@ -93,7 +93,9 @@ func (s *rpcPeer) serve(ln net.Listener) error {
 func (s *rpcPeer) handle(c *rpcConn) {
 	ctx := context.Background()
 	for {
-		c.SetDeadline(time.Now().Add(30 * time.Second))
+		if err := c.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+			return
+		}
 		name, kind, seq, e := c.p.ReadMessageBegin(ctx)
 		if e != nil {
 			return
@@ -244,11 +246,13 @@ func (s *rpcPeer) forward(ctx context.Context, host, method string, route, body 
 	if d, yes := ctx.Deadline(); yes && d.Before(deadline) {
 		deadline = d
 	}
-	c.SetDeadline(deadline)
+	if err := c.SetDeadline(deadline); err != nil {
+		return nil, err
+	}
 	// A cancellation closes this connection; never return it to the pool until
 	// the cancellation callback has either stopped or finished.
 	stopped := make(chan struct{})
-	stop := context.AfterFunc(ctx, func() { c.Close(); close(stopped) })
+	stop := context.AfterFunc(ctx, func() { _ = c.Close(); close(stopped) })
 	defer func() {
 		if !stop() {
 			ok = false

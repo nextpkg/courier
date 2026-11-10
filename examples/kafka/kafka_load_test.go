@@ -24,6 +24,7 @@ import (
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -257,13 +258,13 @@ func runLoadCurve(t *testing.T) {
 			elapsed := time.Since(start).Seconds()
 			if profiling {
 				pprof.StopCPUProfile()
-				pf.Close()
+				require.NoError(t, pf.Close())
 				for _, name := range []string{"allocs", "block", "mutex"} {
 					f, err := os.Create("/bench/" + os.Getenv("REPLY_MODE") + "." + name)
 					require.NoError(t, err)
 
-					pprof.Lookup(name).WriteTo(f, 0)
-					f.Close()
+					assert.NoError(t, pprof.Lookup(name).WriteTo(f, 0))
+					require.NoError(t, f.Close())
 				}
 				runtime.SetBlockProfileRate(0)
 				runtime.SetMutexProfileFraction(0)

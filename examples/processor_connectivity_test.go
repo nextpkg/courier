@@ -26,7 +26,7 @@ func TestCourierProcessorPreservesContextAndThriftSetting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	input, output := thrift.NewTMemoryBuffer(), thrift.NewTMemoryBuffer()
-	ip, op := thrift.NewTBinaryProtocolTransport(input), thrift.NewTBinaryProtocolTransport(output)
+	ip, op := thrift.NewTBinaryProtocolConf(input, nil), thrift.NewTBinaryProtocolConf(output, nil)
 	args := demo.OrdersGetArgs{ID: "owned-context"}
 	require.NoError(t, ip.WriteMessageBegin(ctx, "Get", thrift.CALL, 7))
 	require.NoError(t, args.Write(ctx, ip))

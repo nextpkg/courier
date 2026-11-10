@@ -17,7 +17,7 @@ func TestCompactReplyValidationAndDedupOwnership(t *testing.T) {
 	inbox, err := r.openInbox(context.Background(), f.Session, func(data []byte) { calls++; clear(data) })
 	require.NoError(t, err)
 
-	defer inbox.Close(context.Background())
+	defer func() { _ = inbox.Close(context.Background()) }()
 	for i := 0; i < 2; i++ {
 		m := wire.ReceivedBatchMessage{Instance: []byte(f.Instance), Expires: f.Expires, Data: bytes.Clone(b)}
 		if status := r.deliverCompact(m); status != 204 {

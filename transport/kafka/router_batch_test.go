@@ -34,7 +34,7 @@ func TestBatchCompletionDoesNotWaitForLaterRequests(t *testing.T) {
 			<-ctx.Done()
 			return
 		}
-		w.Write(wire.EncodeStatuses([]int{204}))
+		_, _ = w.Write(wire.EncodeStatuses([]int{204}))
 	}))
 	defer srv.Close()
 	r.client = srv.Client()
@@ -78,7 +78,7 @@ func TestBatchPerItemResultsAndReplay(t *testing.T) {
 	in, err := r.openInbox(context.Background(), route.Session, func([]byte) { calls++ })
 	require.NoError(t, err)
 
-	defer in.Close(context.Background())
+	defer func() { _ = in.Close(context.Background()) }()
 	srv := httptest.NewServer(http.HandlerFunc(r.serve))
 	defer srv.Close()
 	r.client = srv.Client()

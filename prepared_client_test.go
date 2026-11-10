@@ -44,7 +44,7 @@ func TestClientPreparedAndParsedPaths(t *testing.T) {
 	c, err := NewClient(context.Background(), f, ClientOptions{MaxFrameBytes: 512})
 	require.NoError(t, err)
 
-	defer c.Close(context.Background())
+	defer func() { _ = c.Close(context.Background()) }()
 	call, err := c.Submit(context.Background(), "S", "Ping", &unit{})
 	require.NoError(t, err)
 

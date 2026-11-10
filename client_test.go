@@ -320,7 +320,8 @@ func TestClientDrainWaitsAndRejectsNewCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	select {
-	case <-done:
+	case err := <-done:
+		_ = err // Only completion matters here.
 		t.Fatal("drain returned before pending reply")
 	default:
 	}

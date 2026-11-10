@@ -18,7 +18,7 @@ func TestLocalForwardDeadlineAndCancellation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer in.Close(context.Background())
+			defer func() { _ = in.Close(context.Background()) }()
 			ctx := context.Background()
 			switch name {
 			case "expired":

@@ -12,7 +12,7 @@ func BenchmarkForwardFields(b *testing.B) {
 	for _, kind := range []string{"args", "result", "batch_result"} {
 		b.Run(kind, func(b *testing.B) {
 			buffer := thrift.NewTMemoryBufferLen(256)
-			p := thrift.NewTBinaryProtocolTransport(buffer)
+			p := thrift.NewTBinaryProtocolConf(buffer, nil)
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				buffer.Reset()

@@ -54,7 +54,7 @@ func TestRouterParsedInboxStillValidatesWire(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	defer inbox.Close(context.Background())
+	defer func() { _ = inbox.Close(context.Background()) }()
 	if r.deliver(f, []byte("invalid")) != 400 || calls != 0 {
 		t.Fatal("malformed wire accepted")
 	}

@@ -78,3 +78,15 @@ result, err := client.Get(ctx, "order-42", 0)
 | Kafka 并发、worker 与资源取舍 | [容量规划](docs/KAFKA-CAPACITY.md) |
 | 测试分层、运行命令与故障验证 | [测试说明](docs/TESTING.md) |
 | 优化历程、性能图表与测量条件 | [性能优化记录](docs/benchmarks/README.md) |
+
+## Lint
+
+Install [golangci-lint v2.15.0](https://github.com/golangci/golangci-lint/releases/tag/v2.15.0)
+(built with Go 1.27 or newer), then run `./scripts/lint.sh` from the checkout.
+Set `GOLANGCI_LINT` to use a binary outside PATH; the entry point checks its version.
+CI runs the same command. It checks the root, memory, NATS, Kafka and examples
+modules, including tests, first with default tags and then with `integration`.
+Lint analyzes integration code without running it or starting brokers.
+The baseline checks errors, vet diagnostics, ineffective assignments, static
+correctness and simplifications, unused code, and testify usage. Generated code
+is excluded only when it has a standard Go generated-code marker.

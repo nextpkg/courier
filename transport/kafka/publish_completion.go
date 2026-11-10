@@ -46,7 +46,8 @@ func (c *publishCompletion) release() {
 	// A cancelled waiter may leave a buffered result. Drain it before publication
 	// to another caller, including the references held by an error value.
 	select {
-	case <-c.ready:
+	case err := <-c.ready:
+		_ = err // Drain a cancelled waiter's result before reuse.
 	default:
 	}
 	if c.pool != nil {

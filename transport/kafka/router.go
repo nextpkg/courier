@@ -174,7 +174,7 @@ func (t *Transport) startReplyRouter(ctx context.Context) (*replyRouter, error) 
 	u.Path = ""
 	id := make([]byte, 24)
 	if _, err = rand.Read(id); err != nil {
-		ln.Close()
+		_ = ln.Close()
 		return nil, err
 	}
 	r := &replyRouter{t: t, opts: o, instance: hex.EncodeToString(id), endpoint: u.String(), done: make(chan struct{}), served: make(chan struct{}), sessions: map[string]*routedInbox{}, stale: map[string]int64{}, inbound: make(chan struct{}, t.opts.Workers)}
@@ -272,7 +272,7 @@ func (r *replyRouter) openInboxParsed(parent context.Context, session string, re
 		}
 		r.mu.Unlock()
 		in.mu.Lock()
-		in.mu.Unlock()
+		in.mu.Unlock() //nolint:staticcheck // SA2001: wait for the active reply callback before finishing the session.
 		s.finish()
 	}()
 	return s, nil
@@ -524,7 +524,7 @@ func (r *replyRouter) forward(ctx context.Context, record *kgo.Record) error {
 			if err == nil {
 				status = resp.StatusCode
 				_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 		}
 		switch status {

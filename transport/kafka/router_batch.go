@@ -137,7 +137,7 @@ func (r *replyRouter) sendBatch(endpoint string, messages []wire.BatchMessage) [
 	if err != nil {
 		return statuses
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if err != nil || resp.StatusCode != http.StatusOK {
 		return statuses

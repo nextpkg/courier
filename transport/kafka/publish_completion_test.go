@@ -97,7 +97,8 @@ func BenchmarkPublishCompletion(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			done := make(chan error, 1)
 			done <- nil
-			<-done
+			err := <-done
+			_ = err // This test checks completion ownership.
 		}
 	})
 	b.Run("reuse", func(b *testing.B) {
@@ -107,7 +108,8 @@ func BenchmarkPublishCompletion(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			c := pool.acquire()
 			c.complete(nil, nil)
-			<-c.ready
+			err := <-c.ready
+			_ = err // This test checks completion ownership.
 			c.release()
 		}
 	})

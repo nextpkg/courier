@@ -17,7 +17,7 @@ func TestBinaryBatchWireUnsignedPartialReplay(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer in.Close(context.Background())
+	defer func() { _ = in.Close(context.Background()) }()
 	ln, e := net.Listen("tcp", "127.0.0.1:0")
 	if e != nil {
 		t.Fatal(e)
@@ -25,7 +25,7 @@ func TestBinaryBatchWireUnsignedPartialReplay(t *testing.T) {
 	peer := newRPCPeer(r, ln)
 	r.rpc = peer
 	done := make(chan struct{})
-	go func() { peer.serve(ln); close(done) }()
+	go func() { _ = peer.serve(ln); close(done) }()
 	defer func() { peer.close(); <-done }()
 	msgs := []wire.BatchMessage{{Instance: f.Instance, Expires: f.Expires, Data: b}, {Instance: "old", Expires: f.Expires, Data: b}, {Instance: "", Expires: f.Expires, Data: b}, {Instance: f.Instance, Expires: f.Expires, Data: b}}
 	endpoint := "http://" + ln.Addr().String()

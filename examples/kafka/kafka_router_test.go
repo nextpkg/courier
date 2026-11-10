@@ -74,7 +74,7 @@ func testKafkaRouterLifecycle(t *testing.T, batchSize int) {
 	})
 	require.NoError(t, err)
 
-	defer sub.Close(context.Background())
+	defer func() { _ = sub.Close(context.Background()) }()
 	peers := []*kafka.Transport{}
 	ins := []courier.Inbox{}
 	got := make(chan string, 200)
