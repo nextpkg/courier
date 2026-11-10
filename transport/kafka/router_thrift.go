@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/nextpkg/courier/internal/binwrite"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"io"
 	"net"
@@ -140,24 +141,10 @@ func (s *rpcPeer) handle(c *rpcConn) {
 		if c.p.WriteMessageBegin(ctx, name, thrift.REPLY, seq) != nil {
 			return
 		}
-		if c.p.WriteStructBegin(ctx, name+"_result") != nil {
+		if writeForwardResult(ctx, c.p, name == "ForwardBatch", status, batchResults) != nil {
 			return
 		}
-		if name == "ForwardBatch" {
-			result := binary.BigEndian.AppendUint32(make([]byte, 0, 4+len(batchResults)), uint32(status))
-			result = append(result, batchResults...)
-			if c.p.WriteFieldBegin(ctx, "success", thrift.STRING, 0) != nil || c.p.WriteBinary(ctx, result) != nil {
-				return
-			}
-		} else {
-			if c.p.WriteFieldBegin(ctx, "success", thrift.I32, 0) != nil || c.p.WriteI32(ctx, int32(status)) != nil {
-				return
-			}
-		}
-		if c.p.WriteFieldEnd(ctx) != nil {
-			return
-		}
-		if c.p.WriteFieldStop(ctx) != nil || c.p.WriteStructEnd(ctx) != nil || c.p.WriteMessageEnd(ctx) != nil || c.p.Flush(ctx) != nil {
+		if c.p.WriteMessageEnd(ctx) != nil || c.p.Flush(ctx) != nil {
 			return
 		}
 	}
@@ -266,25 +253,7 @@ func (s *rpcPeer) forward(ctx context.Context, host, method string, route, body 
 	if err = p.WriteMessageBegin(ctx, method, thrift.CALL, 1); err != nil {
 		return nil, err
 	}
-	if err = p.WriteStructBegin(ctx, method+"_args"); err != nil {
-		return nil, err
-	}
-	fields := [][]byte{route, body}
-	for i, v := range fields {
-		if err = p.WriteFieldBegin(ctx, "", thrift.STRING, int16(i+1)); err != nil {
-			return nil, err
-		}
-		if err = p.WriteBinary(ctx, v); err != nil {
-			return nil, err
-		}
-		if err = p.WriteFieldEnd(ctx); err != nil {
-			return nil, err
-		}
-	}
-	if err = p.WriteFieldStop(ctx); err != nil {
-		return nil, err
-	}
-	if err = p.WriteStructEnd(ctx); err != nil {
+	if err = writeForwardArgs(ctx, p, route, body); err != nil {
 		return nil, err
 	}
 	if err = p.WriteMessageEnd(ctx); err != nil {
@@ -349,4 +318,30 @@ func (s *rpcPeer) forward(ctx context.Context, host, method string, route, body 
 	}
 	ok = ctx.Err() == nil
 	return &rpcResult{status: int(status), body: batchResults}, nil
+}
+
+// writeForwardArgs writes only the argument struct; message framing and I/O
+// completion stay with the connection owner.
+func writeForwardArgs(ctx context.Context, p *thrift.TBinaryProtocol, route, body []byte) error {
+	w := binwrite.Writer{Protocol: p, Context: ctx}
+	w.Field(1, thrift.STRING)
+	w.Binary(route)
+	w.Field(2, thrift.STRING)
+	w.Binary(body)
+	w.Stop()
+	return w.Err
+}
+func writeForwardResult(ctx context.Context, p *thrift.TBinaryProtocol, batch bool, status int, results []byte) error {
+	w := binwrite.Writer{Protocol: p, Context: ctx}
+	if batch {
+		result := binary.BigEndian.AppendUint32(make([]byte, 0, 4+len(results)), uint32(status))
+		result = append(result, results...)
+		w.Field(0, thrift.STRING)
+		w.Binary(result)
+	} else {
+		w.Field(0, thrift.I32)
+		w.Int32(int32(status))
+	}
+	w.Stop()
+	return w.Err
 }

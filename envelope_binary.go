@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/nextpkg/courier/internal/binwrite"
 )
 
 var binaryEnvelopePrefix = []byte{0x80, 'C', 'R', 1}
@@ -20,125 +21,36 @@ func encodeBinaryEnvelope(e Envelope, limit int) ([]byte, error) {
 	if _, err := b.Write(binaryEnvelopePrefix); err != nil {
 		return nil, err
 	}
-	ctx := context.Background()
-	if err := p.WriteStructBegin(ctx, "Envelope"); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Version", thrift.I32, 1); err != nil {
-		return nil, err
-	}
-	if err := p.WriteI32(ctx, int32(e.Version)); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Kind", thrift.STRING, 2); err != nil {
-		return nil, err
-	}
-	if err := p.WriteString(ctx, e.Kind); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Service", thrift.STRING, 3); err != nil {
-		return nil, err
-	}
-	if err := p.WriteString(ctx, e.Service); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Method", thrift.STRING, 4); err != nil {
-		return nil, err
-	}
-	if err := p.WriteString(ctx, e.Method); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "ID", thrift.STRING, 5); err != nil {
-		return nil, err
-	}
-	if err := p.WriteString(ctx, e.ID); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Session", thrift.STRING, 6); err != nil {
-		return nil, err
-	}
-	if err := p.WriteString(ctx, e.Session); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Deadline", thrift.I64, 7); err != nil {
-		return nil, err
-	}
-	if err := p.WriteI64(ctx, e.Deadline); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "ReplyTopic", thrift.STRING, 8); err != nil {
-		return nil, err
-	}
-	if err := p.WriteString(ctx, e.Reply.Topic); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "ReplyPartition", thrift.I32, 9); err != nil {
-		return nil, err
-	}
-	if err := p.WriteI32(ctx, e.Reply.Partition); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Payload", thrift.STRING, 10); err != nil {
-		return nil, err
-	}
-	if err := p.WriteBinary(ctx, e.Payload); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
+	w := binwrite.Writer{Protocol: p, Context: context.Background()}
+	w.Field(1, thrift.I32)
+	w.Int32(int32(e.Version))
+	w.Field(2, thrift.STRING)
+	w.String(e.Kind)
+	w.Field(3, thrift.STRING)
+	w.String(e.Service)
+	w.Field(4, thrift.STRING)
+	w.String(e.Method)
+	w.Field(5, thrift.STRING)
+	w.String(e.ID)
+	w.Field(6, thrift.STRING)
+	w.String(e.Session)
+	w.Field(7, thrift.I64)
+	w.Int64(e.Deadline)
+	w.Field(8, thrift.STRING)
+	w.String(e.Reply.Topic)
+	w.Field(9, thrift.I32)
+	w.Int32(e.Reply.Partition)
+	w.Field(10, thrift.STRING)
+	w.Binary(e.Payload)
 	if e.Error != nil {
-		if err := p.WriteFieldBegin(ctx, "ErrorCode", thrift.STRING, 11); err != nil {
-			return nil, err
-		}
-		if err := p.WriteString(ctx, e.Error.Code); err != nil {
-			return nil, err
-		}
-		if err := p.WriteFieldEnd(ctx); err != nil {
-			return nil, err
-		}
-		if err := p.WriteFieldBegin(ctx, "ErrorMessage", thrift.STRING, 12); err != nil {
-			return nil, err
-		}
-		if err := p.WriteString(ctx, e.Error.Message); err != nil {
-			return nil, err
-		}
-		if err := p.WriteFieldEnd(ctx); err != nil {
-			return nil, err
-		}
+		w.Field(11, thrift.STRING)
+		w.String(e.Error.Code)
+		w.Field(12, thrift.STRING)
+		w.String(e.Error.Message)
 	}
-	if err := p.WriteFieldStop(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteStructEnd(ctx); err != nil {
-		return nil, err
+	w.Stop()
+	if w.Err != nil {
+		return nil, w.Err
 	}
 	if err := checkErrorReplyBudget(e, limit); err != nil {
 		return nil, err

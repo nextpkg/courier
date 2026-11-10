@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/internal/binwrite"
 	"sync"
 )
 
@@ -58,86 +59,32 @@ func EncodeRoute(f Route) ([]byte, error) {
 
 // The returned view is valid only while the caller owns c.
 func encodeBinaryRoute(c *routeCodec, f Route) ([]byte, error) {
-	p := c.p
-	ctx := context.Background()
 	c.b.Write(RoutePrefix)
-	if err := p.WriteStructBegin(ctx, "ReplyRoute"); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Endpoint", thrift.STRING, 1); err != nil {
-		return nil, err
-	}
-	if err := p.WriteString(ctx, f.Endpoint); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Instance", thrift.STRING, 2); err != nil {
-		return nil, err
-	}
-	if err := p.WriteString(ctx, f.Instance); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Session", thrift.STRING, 3); err != nil {
-		return nil, err
-	}
-	if err := p.WriteString(ctx, f.Session); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "ID", thrift.STRING, 4); err != nil {
-		return nil, err
-	}
-	if err := p.WriteString(ctx, f.ID); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Topic", thrift.STRING, 5); err != nil {
-		return nil, err
-	}
-	if err := p.WriteString(ctx, f.Topic); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Partition", thrift.I32, 6); err != nil {
-		return nil, err
-	}
-	if err := p.WriteI32(ctx, f.Partition); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldBegin(ctx, "Expires", thrift.I64, 7); err != nil {
-		return nil, err
-	}
-	if err := p.WriteI64(ctx, f.Expires); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteFieldStop(ctx); err != nil {
-		return nil, err
-	}
-	if err := p.WriteStructEnd(ctx); err != nil {
-		return nil, err
+	w := binwrite.Writer{Protocol: c.p, Context: context.Background()}
+	w.Field(1, thrift.STRING)
+	w.String(f.Endpoint)
+	w.Field(2, thrift.STRING)
+	w.String(f.Instance)
+	w.Field(3, thrift.STRING)
+	w.String(f.Session)
+	w.Field(4, thrift.STRING)
+	w.String(f.ID)
+	w.Field(5, thrift.STRING)
+	w.String(f.Topic)
+	w.Field(6, thrift.I32)
+	w.Int32(f.Partition)
+	w.Field(7, thrift.I64)
+	w.Int64(f.Expires)
+	w.Stop()
+	if w.Err != nil {
+		return nil, w.Err
 	}
 	if c.b.Len() > MaxRouteBytes {
 		return nil, courier.ErrTooLarge
 	}
 	return c.b.Bytes(), nil
 }
+
 func DecodeRoute(data []byte) (Route, error) {
 	if len(data) > MaxRouteBytes {
 		return Route{}, fmt.Errorf("routing header too large")
