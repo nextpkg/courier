@@ -36,6 +36,7 @@ type rpcConn struct {
 type rpcPool struct {
 	idle  reuse.Cache[*rpcConn]
 	slots chan struct{}
+	users int // Borrowers and slot waiters; guarded by rpcPeer.mu.
 }
 type rpcPeer struct {
 	r         *replyRouter
@@ -197,18 +198,11 @@ func (s *rpcPeer) forward(ctx context.Context, host, method string, route, body 
 	if int64(len(body)) > maxBody {
 		return nil, fmt.Errorf("frame too large")
 	}
-	var err error
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return nil, net.ErrClosed
+	pool, err := s.acquirePool(ctx, host)
+	if err != nil {
+		return nil, err
 	}
-	pool := s.pools[host]
-	if pool == nil {
-		pool = &rpcPool{make(reuse.Cache[*rpcConn], s.r.t.opts.Workers), make(chan struct{}, s.r.t.opts.Workers)}
-		s.pools[host] = pool
-	}
-	s.mu.Unlock()
+	defer s.releasePool(pool)
 	select {
 	case pool.slots <- struct{}{}:
 		defer func() { <-pool.slots }()
@@ -230,7 +224,7 @@ func (s *rpcPeer) forward(ctx context.Context, host, method string, route, body 
 	}
 	ok := false
 	defer func() {
-		if ok && s.idleCount.Add(1) <= 512 {
+		if ok && s.idleCount.Add(1) <= maxRPCIdleConnections {
 			if !pool.idle.Put(c) {
 				s.idleCount.Add(-1)
 				s.drop(c.Conn)
