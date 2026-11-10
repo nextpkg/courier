@@ -334,10 +334,8 @@ func (s *rpcPeer) forward(ctx context.Context, host, method string, route, body 
 // completion stay with the connection owner.
 func writeForwardArgs(ctx context.Context, p *thrift.TBinaryProtocol, route, body []byte) error {
 	w := binwrite.Writer{Protocol: p, Context: ctx}
-	w.Field(forwardRouteFieldID, thrift.STRING)
-	w.Binary(route)
-	w.Field(forwardDataFieldID, thrift.STRING)
-	w.Binary(body)
+	binwrite.Value(&w, forwardRouteFieldID, route, binwrite.StringField, (*binwrite.Writer).Binary)
+	binwrite.Value(&w, forwardDataFieldID, body, binwrite.StringField, (*binwrite.Writer).Binary)
 	w.Stop()
 	return w.Err
 }
@@ -346,11 +344,9 @@ func writeForwardResult(ctx context.Context, p *thrift.TBinaryProtocol, batch bo
 	if batch {
 		result := binary.BigEndian.AppendUint32(make([]byte, 0, 4+len(results)), uint32(status))
 		result = append(result, results...)
-		w.Field(forwardSuccessFieldID, thrift.STRING)
-		w.Binary(result)
+		binwrite.Value(&w, forwardSuccessFieldID, result, binwrite.StringField, (*binwrite.Writer).Binary)
 	} else {
-		w.Field(forwardSuccessFieldID, thrift.I32)
-		w.Int32(int32(status))
+		binwrite.Value(&w, forwardSuccessFieldID, int32(status), binwrite.Int32Field, (*binwrite.Writer).Int32)
 	}
 	w.Stop()
 	return w.Err

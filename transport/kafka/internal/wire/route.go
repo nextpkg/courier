@@ -61,20 +61,13 @@ func EncodeRoute(f Route) ([]byte, error) {
 func encodeBinaryRoute(c *routeCodec, f Route) ([]byte, error) {
 	c.b.Write(RoutePrefix)
 	w := binwrite.Writer{Protocol: c.p, Context: context.Background()}
-	w.Field(RouteFieldEndpoint, thrift.STRING)
-	w.String(f.Endpoint)
-	w.Field(RouteFieldInstance, thrift.STRING)
-	w.String(f.Instance)
-	w.Field(RouteFieldSession, thrift.STRING)
-	w.String(f.Session)
-	w.Field(RouteFieldID, thrift.STRING)
-	w.String(f.ID)
-	w.Field(RouteFieldTopic, thrift.STRING)
-	w.String(f.Topic)
-	w.Field(RouteFieldPartition, thrift.I32)
-	w.Int32(f.Partition)
-	w.Field(RouteFieldExpires, thrift.I64)
-	w.Int64(f.Expires)
+	binwrite.Value(&w, RouteFieldEndpoint, f.Endpoint, binwrite.StringField, (*binwrite.Writer).String)
+	binwrite.Value(&w, RouteFieldInstance, f.Instance, binwrite.StringField, (*binwrite.Writer).String)
+	binwrite.Value(&w, RouteFieldSession, f.Session, binwrite.StringField, (*binwrite.Writer).String)
+	binwrite.Value(&w, RouteFieldID, f.ID, binwrite.StringField, (*binwrite.Writer).String)
+	binwrite.Value(&w, RouteFieldTopic, f.Topic, binwrite.StringField, (*binwrite.Writer).String)
+	binwrite.Value(&w, RouteFieldPartition, f.Partition, binwrite.Int32Field, (*binwrite.Writer).Int32)
+	binwrite.Value(&w, RouteFieldExpires, f.Expires, binwrite.Int64Field, (*binwrite.Writer).Int64)
 	w.Stop()
 	if w.Err != nil {
 		return nil, w.Err

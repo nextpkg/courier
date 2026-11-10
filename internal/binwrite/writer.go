@@ -46,3 +46,12 @@ func (w *Writer) Binary(value []byte) {
 		w.Err = w.Protocol.WriteBinary(w.Context, value)
 	}
 }
+
+// Value applies statically supplied field/value operations without a type switch.
+func Value[T any](w *Writer, id int16, value T, field func(*Writer, int16), write func(*Writer, T)) {
+	field(w, id)
+	write(w, value)
+}
+func StringField(w *Writer, id int16) { w.Field(id, thrift.STRING) }
+func Int32Field(w *Writer, id int16)  { w.Field(id, thrift.I32) }
+func Int64Field(w *Writer, id int16)  { w.Field(id, thrift.I64) }
