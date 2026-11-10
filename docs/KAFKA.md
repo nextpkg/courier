@@ -4,7 +4,7 @@
 
 首次运行请先完成 [Kafka 示例](EXAMPLES.md#kafka)；本文供部署与运维查阅，参数的容量选择依据见 [容量规划](KAFKA-CAPACITY.md)。
 
-并发与阶段耗时数据见 [Kafka 网关并发测量](benchmarks/kafka-gateway-2026-11-09/README.md)，其中注明测量版本和条件。
+并发与阶段耗时数据见 [Kafka 网关并发测量](benchmarks/README.md)，其中注明测量版本和条件。
 
 ## 部署模型
 

@@ -45,7 +45,7 @@ KAFKA_BROKERS=127.0.0.1:9092 REPLY_MODE=thrift   go test -tags=integration -run 
 
 ## 资源限额与联合并发扫描
 
-当前已测曲线和测量条件在 [性能图表](benchmarks/kafka-gateway-2026-11-09/README.md)，容量解释在 [容量规划](KAFKA-CAPACITY.md)。下面命令本身不会创建 Broker 或设置 CPU/内存配额，应在相应容器限额下运行：
+当前已测曲线和测量条件在 [性能图表](benchmarks/README.md)，容量解释在 [容量规划](KAFKA-CAPACITY.md)。下面命令本身不会创建 Broker 或设置 CPU/内存配额，应在相应容器限额下运行：
 
 ```sh
 KAFKA_BROKERS=kafka:9092 GOMAXPROCS=4 REPLY_MODE=thrift THRIFT_BATCH_SIZE=32   go test -tags=integration ./examples -run '^TestKafkaLoadCurve$' -count=1 -timeout=10m -args   -kafka-load-concurrency=256,512,768,1024,1280,1536,2048,3072   -kafka-load-duration=30s -kafka-load-trials=2 -kafka-load-mixed   -kafka-publish-workers=128 -kafka-server-workers=128 -kafka-reply-workers=128   -kafka-load-window=1024 -kafka-core-concurrency=128 -kafka-publish-buffers=1024   -kafka-max-in-flight=2048 -kafka-forward-batches=2 -kafka-load-resources
@@ -65,7 +65,7 @@ KAFKA_BROKERS=kafka:9092 GOMAXPROCS=4 REPLY_MODE=thrift THRIFT_BATCH_SIZE=32   g
 
 `-kafka-load-diagnostics` 启用测试专用的 SDK hooks 和 handler 包装，记录 `KAFKA_DIAGNOSTICS`。`produce_success` 覆盖入 SDK 至发布回调；`broker_api_*_wire` 是网络往返，`*_write_wait` 是 SDK 写入排队；`fetch_buffer_to_handler` 是 fetch 缓冲至核心 handler；`core_handler` 不含适配器回复发布。采样有锁及解码成本，应使用无采样对照，不能简单相减不同分母的平均值。
 
-`COURIER_PROFILE=1` 在负载测量窗口输出 CPU/分配 profile，容器内 `/bench` 需为可写目录；此开关仅在测试中使用。分段结果及 v1/v2 采样边界见 [并发资料](benchmarks/kafka-gateway-2026-11-09/README.md#分段耗时)。
+`COURIER_PROFILE=1` 在负载测量窗口输出 CPU/分配 profile，容器内 `/bench` 需为可写目录；此开关仅在测试中使用。分段结果及 v1/v2 采样边界见 [并发资料](benchmarks/README.md#分段耗时)。
 
 ## 扩缩容、背压与进程故障
 
