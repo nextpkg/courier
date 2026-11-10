@@ -3,12 +3,12 @@ module github.com/nextpkg/courier/examples
 go 1.26.0
 
 require (
+	github.com/apache/thrift v0.25.0
+	github.com/nats-io/nats.go v1.55.0
 	github.com/nextpkg/courier v1.0.0
 	github.com/nextpkg/courier/transport/kafka v1.0.0
 	github.com/nextpkg/courier/transport/memory v1.0.0
 	github.com/nextpkg/courier/transport/nats v1.0.0
-	github.com/apache/thrift v0.25.0
-	github.com/nats-io/nats.go v1.55.0
 	github.com/twmb/franz-go v1.22.2
 	github.com/twmb/franz-go/pkg/kmsg v1.15.0
 )

@@ -30,6 +30,7 @@ type Client struct {
 	session string
 	ctx     context.Context
 	cancel  context.CancelFunc
+	// Submit and reply completion share the pending map and synchronize here.
 	mu      sync.Mutex
 	closed  bool
 	pending map[string]*Call
@@ -45,6 +46,7 @@ type Call struct {
 	cancel              context.CancelFunc
 	stop                func() bool
 	data                []byte
+	prepared            PreparedRequest
 	done                chan struct{}
 	sent                chan struct{}
 	sentOnce            sync.Once
@@ -92,7 +94,11 @@ func NewClient(ctx context.Context, t Transport, opts ClientOptions) (*Client, e
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	c := &Client{t: t, opts: opts, session: session, ctx: ctx, cancel: cancel, pending: make(map[string]*Call), jobs: make(chan *Call, opts.MaxInFlight), done: make(chan struct{})}
-	c.inbox, err = t.OpenInbox(ctx, session, c.receive)
+	if parsed, ok := t.(EnvelopeInboxTransport); ok {
+		c.inbox, err = parsed.OpenEnvelopeInbox(ctx, session, c.receiveEnvelope)
+	} else {
+		c.inbox, err = t.OpenInbox(ctx, session, c.receive)
+	}
 	if err != nil {
 		cancel()
 		return nil, err
@@ -107,6 +113,7 @@ func NewClient(ctx context.Context, t Transport, opts ClientOptions) (*Client, e
 			select {
 			case x := <-c.jobs:
 				x.data = nil
+				x.prepared = nil
 			default:
 				close(c.done)
 				return
@@ -152,12 +159,22 @@ func (c *Client) submit(ctx context.Context, cancel context.CancelFunc, service,
 		return nil, err
 	}
 	deadline, _ := ctx.Deadline()
-	data, err := EncodeEnvelope(Envelope{Version: ProtocolVersion, Kind: "request", Service: service, Method: method, ID: id, Session: c.session, Deadline: deadline.UnixNano(), Reply: c.inbox.Route(), Payload: payload}, c.opts.MaxFrameBytes)
+	e := Envelope{Version: ProtocolVersion, Kind: "request", Service: service, Method: method, ID: id, Session: c.session, Deadline: deadline.UnixNano(), Reply: c.inbox.Route(), Payload: payload}
+	var data []byte
+	var prepared PreparedRequest
+	if transport, ok := c.t.(RequestPreparer); ok {
+		prepared, err = transport.PrepareRequest(ctx, e, c.opts.MaxFrameBytes)
+		if err == nil && prepared == nil {
+			err = fmt.Errorf("courier: nil prepared request")
+		}
+	} else {
+		data, err = EncodeEnvelope(e, c.opts.MaxFrameBytes)
+	}
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	x := &Call{id: id, service: service, method: method, ctx: ctx, cancel: cancel, data: data, done: make(chan struct{}), sent: make(chan struct{})}
+	x := &Call{id: id, service: service, method: method, ctx: ctx, cancel: cancel, data: data, prepared: prepared, done: make(chan struct{}), sent: make(chan struct{})}
 	c.mu.Lock()
 	if c.closed || c.ctx.Err() != nil {
 		c.mu.Unlock()
@@ -192,10 +209,17 @@ func (c *Client) publishLoop() {
 		case x := <-c.jobs:
 			if x.ctx.Err() != nil {
 				x.data = nil
+				x.prepared = nil
 				continue
 			}
-			err := c.t.Send(x.ctx, x.service, c.inbox.Route(), x.data)
+			var err error
+			if x.prepared != nil {
+				err = x.prepared.Send(x.ctx)
+			} else {
+				err = c.t.Send(x.ctx, x.service, c.inbox.Route(), x.data)
+			}
 			x.data = nil
+			x.prepared = nil
 			if err != nil {
 				err = &TransportError{Cause: err}
 			}
@@ -209,9 +233,18 @@ func (c *Client) publishLoop() {
 func (x *Call) markSent(err error) { x.sentOnce.Do(func() { x.sendErr = err; close(x.sent) }) }
 func (c *Client) receive(data []byte) {
 	e, err := DecodeEnvelope(data, c.opts.MaxFrameBytes)
-	if err != nil || e.Kind != "response" || e.Session != c.session {
+	if err != nil {
 		return
 	}
+	c.receiveEnvelope(e, len(data))
+}
+// Parsed delivery avoids another envelope decode. Correlation and size checks
+// still apply before completing a pending call.
+func (c *Client) receiveEnvelope(e Envelope, frameBytes int) {
+	if frameBytes < 0 || frameBytes > c.opts.MaxFrameBytes || e.Version != ProtocolVersion || e.Kind != "response" || e.Session != c.session || e.ID == "" || e.Service == "" || e.Method == "" {
+		return
+	}
+
 	c.mu.Lock()
 	x := c.pending[e.ID]
 	valid := x != nil && x.service == e.Service && x.method == e.Method
@@ -258,6 +291,27 @@ func (c *Client) abort() {
 		c.finish(id, nil, ErrClosed)
 	}
 	c.cancel()
+}
+
+// Drain rejects new calls, waits for admitted calls, then closes the inbox.
+// A deadline aborts remaining calls. Close the caller-owned Transport afterwards.
+func (c *Client) Drain(ctx context.Context) error {
+	c.mu.Lock()
+	c.closed = true
+	calls := make([]*Call, 0, len(c.pending))
+	for _, call := range c.pending {
+		calls = append(calls, call)
+	}
+	c.mu.Unlock()
+	for _, call := range calls {
+		select {
+		case <-call.done:
+		case <-ctx.Done():
+			_ = c.Close(ctx)
+			return ctx.Err()
+		}
+	}
+	return c.Close(ctx)
 }
 
 // Close rejects new calls, terminates pending calls, and closes the reply inbox.

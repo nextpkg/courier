@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"github.com/nextpkg/courier"
 	"strings"
@@ -19,12 +18,12 @@ func TestUnreplyableRecordCanBeCommitted(t *testing.T) {
 	}
 	tr := &Transport{opts: opts}
 	e := courier.Envelope{Version: 1, Kind: "request", Service: "S", Method: "Ping", ID: "id", Session: "s", Reply: structRoute(opts.ReplyTopic, 0)}
-	base, err := json.Marshal(e)
+	base, err := courier.EncodeEnvelope(e, courier.DefaultMaxFrameBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
 	e.Session = strings.Repeat("s", 1+opts.MaxFrameBytes-len(base))
-	raw, err := json.Marshal(e)
+	raw, err := courier.EncodeEnvelope(e, courier.DefaultMaxFrameBytes)
 	if err != nil || len(raw) != opts.MaxFrameBytes {
 		t.Fatalf("invalid fixture: %v, bytes=%d", err, len(raw))
 	}

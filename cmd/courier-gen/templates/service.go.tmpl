@@ -4,7 +4,7 @@ type {{.Name}}AsyncClient struct { core *courier.Client; service string }
 func New{{.Name}}AsyncClient(c *courier.Client) *{{.Name}}AsyncClient { return New{{.Name}}AsyncClientFor(c,{{printf "%q" .Name}}) }
 func New{{.Name}}AsyncClientFor(c *courier.Client, service string) *{{.Name}}AsyncClient { return &{{.Name}}AsyncClient{core:c,service:service} }
 func Register{{.Name}}(s *courier.Server, handler {{.Name}}) error { return Register{{.Name}}As(s,{{printf "%q" .Name}},handler) }
-func Register{{.Name}}As(s *courier.Server, service string, handler {{.Name}}) error { return s.Register(service,New{{.Name}}Processor(handler)) }
+func Register{{.Name}}As(s *courier.Server, service string, handler {{.Name}}) error { return s.Register(service,New{{.Name}}CourierProcessor(handler)) }
 
 // Dial{{.Name}} creates a dedicated Courier client and its typed service wrapper.
 // It prepares reply delivery without checking remote service availability.

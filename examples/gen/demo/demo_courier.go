@@ -4,10 +4,146 @@ package demo
 
 import (
 	context "context"
+	errors "errors"
 	fmt "fmt"
 	thrift "github.com/apache/thrift/lib/go/thrift"
 	courier "github.com/nextpkg/courier"
 )
+
+func NewInventoryCourierProcessor(handler Inventory) *InventoryProcessor {
+	self29 := &InventoryProcessor{handler: handler, processorMap: make(map[string]thrift.TProcessorFunction)}
+	self29.processorMap["Count"] = &_courierinventoryProcessorCount{handler: handler}
+	self29.processorMap["Reserve"] = &_courierinventoryProcessorReserve{handler: handler}
+	return self29
+}
+
+type _courierinventoryProcessorCount struct{ handler Inventory }
+
+func (p *_courierinventoryProcessorCount) Process(ctx context.Context, seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+	var _write_err31 thrift.TException
+	args := InventoryCountArgs{}
+	if err2 := args.Read(ctx, iprot); err2 != nil {
+		iprot.ReadMessageEnd(ctx)
+		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err2.Error())
+		oprot.WriteMessageBegin(ctx, "Count", thrift.EXCEPTION, seqId)
+		x.Write(ctx, oprot)
+		oprot.WriteMessageEnd(ctx)
+		oprot.Flush(ctx)
+		return false, thrift.WrapTException(err2)
+	}
+	iprot.ReadMessageEnd(ctx)
+	result := InventoryCountResult{}
+	if retval, err2 := p.handler.Count(ctx, args.ID); err2 != nil {
+		err = thrift.WrapTException(err2)
+		if errors.Is(err2, thrift.ErrAbandonRequest) {
+			return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err2), EndpointError: err}
+		}
+		if errors.Is(err2, context.Canceled) {
+			if err3 := context.Cause(ctx); errors.Is(err3, thrift.ErrAbandonRequest) {
+				return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err3), EndpointError: err}
+			}
+		}
+		_exc32 := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing Count: "+err2.Error())
+		if err2 := oprot.WriteMessageBegin(ctx, "Count", thrift.EXCEPTION, seqId); err2 != nil {
+			_write_err31 = thrift.WrapTException(err2)
+		}
+		if err2 := _exc32.Write(ctx, oprot); _write_err31 == nil && err2 != nil {
+			_write_err31 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.WriteMessageEnd(ctx); _write_err31 == nil && err2 != nil {
+			_write_err31 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.Flush(ctx); _write_err31 == nil && err2 != nil {
+			_write_err31 = thrift.WrapTException(err2)
+		}
+		if _write_err31 != nil {
+			return false, &thrift.ProcessorError{WriteError: _write_err31, EndpointError: err}
+		}
+		return true, err
+	} else {
+		result.Success = &retval
+	}
+	if err2 := oprot.WriteMessageBegin(ctx, "Count", thrift.REPLY, seqId); err2 != nil {
+		_write_err31 = thrift.WrapTException(err2)
+	}
+	if err2 := result.Write(ctx, oprot); _write_err31 == nil && err2 != nil {
+		_write_err31 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.WriteMessageEnd(ctx); _write_err31 == nil && err2 != nil {
+		_write_err31 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.Flush(ctx); _write_err31 == nil && err2 != nil {
+		_write_err31 = thrift.WrapTException(err2)
+	}
+	if _write_err31 != nil {
+		return false, &thrift.ProcessorError{WriteError: _write_err31, EndpointError: err}
+	}
+	return true, err
+}
+
+type _courierinventoryProcessorReserve struct{ handler Inventory }
+
+func (p *_courierinventoryProcessorReserve) Process(ctx context.Context, seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+	var _write_err33 thrift.TException
+	args := InventoryReserveArgs{}
+	if err2 := args.Read(ctx, iprot); err2 != nil {
+		iprot.ReadMessageEnd(ctx)
+		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err2.Error())
+		oprot.WriteMessageBegin(ctx, "Reserve", thrift.EXCEPTION, seqId)
+		x.Write(ctx, oprot)
+		oprot.WriteMessageEnd(ctx)
+		oprot.Flush(ctx)
+		return false, thrift.WrapTException(err2)
+	}
+	iprot.ReadMessageEnd(ctx)
+	result := InventoryReserveResult{}
+	if retval, err2 := p.handler.Reserve(ctx, args.ID); err2 != nil {
+		err = thrift.WrapTException(err2)
+		if errors.Is(err2, thrift.ErrAbandonRequest) {
+			return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err2), EndpointError: err}
+		}
+		if errors.Is(err2, context.Canceled) {
+			if err3 := context.Cause(ctx); errors.Is(err3, thrift.ErrAbandonRequest) {
+				return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err3), EndpointError: err}
+			}
+		}
+		_exc34 := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing Reserve: "+err2.Error())
+		if err2 := oprot.WriteMessageBegin(ctx, "Reserve", thrift.EXCEPTION, seqId); err2 != nil {
+			_write_err33 = thrift.WrapTException(err2)
+		}
+		if err2 := _exc34.Write(ctx, oprot); _write_err33 == nil && err2 != nil {
+			_write_err33 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.WriteMessageEnd(ctx); _write_err33 == nil && err2 != nil {
+			_write_err33 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.Flush(ctx); _write_err33 == nil && err2 != nil {
+			_write_err33 = thrift.WrapTException(err2)
+		}
+		if _write_err33 != nil {
+			return false, &thrift.ProcessorError{WriteError: _write_err33, EndpointError: err}
+		}
+		return true, err
+	} else {
+		result.Success = retval
+	}
+	if err2 := oprot.WriteMessageBegin(ctx, "Reserve", thrift.REPLY, seqId); err2 != nil {
+		_write_err33 = thrift.WrapTException(err2)
+	}
+	if err2 := result.Write(ctx, oprot); _write_err33 == nil && err2 != nil {
+		_write_err33 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.WriteMessageEnd(ctx); _write_err33 == nil && err2 != nil {
+		_write_err33 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.Flush(ctx); _write_err33 == nil && err2 != nil {
+		_write_err33 = thrift.WrapTException(err2)
+	}
+	if _write_err33 != nil {
+		return false, &thrift.ProcessorError{WriteError: _write_err33, EndpointError: err}
+	}
+	return true, err
+}
 
 // InventoryAsyncClient provides synchronous and asynchronous service methods.
 // It shares the supplied core client and does not own its lifecycle.
@@ -26,7 +162,7 @@ func RegisterInventory(s *courier.Server, handler Inventory) error {
 	return RegisterInventoryAs(s, "Inventory", handler)
 }
 func RegisterInventoryAs(s *courier.Server, service string, handler Inventory) error {
-	return s.Register(service, NewInventoryProcessor(handler))
+	return s.Register(service, NewInventoryCourierProcessor(handler))
 }
 
 // DialInventory creates a dedicated Courier client and its typed service wrapper.
@@ -116,6 +252,208 @@ func (_courierClient *InventoryAsyncClient) Reserve(ctx context.Context, id stri
 	}
 	return f.Await(ctx)
 }
+func NewOrdersCourierProcessor(handler Orders) *OrdersProcessor {
+	self12 := &OrdersProcessor{handler: handler, processorMap: make(map[string]thrift.TProcessorFunction)}
+	self12.processorMap["Get"] = &_courierordersProcessorGet{handler: handler}
+	self12.processorMap["List"] = &_courierordersProcessorList{handler: handler}
+	self12.processorMap["Ping"] = &_courierordersProcessorPing{handler: handler}
+	return self12
+}
+
+type _courierordersProcessorGet struct{ handler Orders }
+
+func (p *_courierordersProcessorGet) Process(ctx context.Context, seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+	var _write_err14 thrift.TException
+	args := OrdersGetArgs{}
+	if err2 := args.Read(ctx, iprot); err2 != nil {
+		iprot.ReadMessageEnd(ctx)
+		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err2.Error())
+		oprot.WriteMessageBegin(ctx, "Get", thrift.EXCEPTION, seqId)
+		x.Write(ctx, oprot)
+		oprot.WriteMessageEnd(ctx)
+		oprot.Flush(ctx)
+		return false, thrift.WrapTException(err2)
+	}
+	iprot.ReadMessageEnd(ctx)
+	result := OrdersGetResult{}
+	if retval, err2 := p.handler.Get(ctx, args.ID, args.DelayMs); err2 != nil {
+		err = thrift.WrapTException(err2)
+		switch v := err2.(type) {
+		case *Rejected:
+			result.Rejected = v
+		default:
+			if errors.Is(err2, thrift.ErrAbandonRequest) {
+				return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err2), EndpointError: err}
+			}
+			if errors.Is(err2, context.Canceled) {
+				if err3 := context.Cause(ctx); errors.Is(err3, thrift.ErrAbandonRequest) {
+					return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err3), EndpointError: err}
+				}
+			}
+			_exc15 := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing Get: "+err2.Error())
+			if err2 := oprot.WriteMessageBegin(ctx, "Get", thrift.EXCEPTION, seqId); err2 != nil {
+				_write_err14 = thrift.WrapTException(err2)
+			}
+			if err2 := _exc15.Write(ctx, oprot); _write_err14 == nil && err2 != nil {
+				_write_err14 = thrift.WrapTException(err2)
+			}
+			if err2 := oprot.WriteMessageEnd(ctx); _write_err14 == nil && err2 != nil {
+				_write_err14 = thrift.WrapTException(err2)
+			}
+			if err2 := oprot.Flush(ctx); _write_err14 == nil && err2 != nil {
+				_write_err14 = thrift.WrapTException(err2)
+			}
+			if _write_err14 != nil {
+				return false, &thrift.ProcessorError{WriteError: _write_err14, EndpointError: err}
+			}
+			return true, err
+		}
+	} else {
+		result.Success = retval
+	}
+	if err2 := oprot.WriteMessageBegin(ctx, "Get", thrift.REPLY, seqId); err2 != nil {
+		_write_err14 = thrift.WrapTException(err2)
+	}
+	if err2 := result.Write(ctx, oprot); _write_err14 == nil && err2 != nil {
+		_write_err14 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.WriteMessageEnd(ctx); _write_err14 == nil && err2 != nil {
+		_write_err14 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.Flush(ctx); _write_err14 == nil && err2 != nil {
+		_write_err14 = thrift.WrapTException(err2)
+	}
+	if _write_err14 != nil {
+		return false, &thrift.ProcessorError{WriteError: _write_err14, EndpointError: err}
+	}
+	return true, err
+}
+
+type _courierordersProcessorList struct{ handler Orders }
+
+func (p *_courierordersProcessorList) Process(ctx context.Context, seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+	var _write_err16 thrift.TException
+	args := OrdersListArgs{}
+	if err2 := args.Read(ctx, iprot); err2 != nil {
+		iprot.ReadMessageEnd(ctx)
+		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err2.Error())
+		oprot.WriteMessageBegin(ctx, "List", thrift.EXCEPTION, seqId)
+		x.Write(ctx, oprot)
+		oprot.WriteMessageEnd(ctx)
+		oprot.Flush(ctx)
+		return false, thrift.WrapTException(err2)
+	}
+	iprot.ReadMessageEnd(ctx)
+	result := OrdersListResult{}
+	if retval, err2 := p.handler.List(ctx, args.Ids); err2 != nil {
+		err = thrift.WrapTException(err2)
+		if errors.Is(err2, thrift.ErrAbandonRequest) {
+			return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err2), EndpointError: err}
+		}
+		if errors.Is(err2, context.Canceled) {
+			if err3 := context.Cause(ctx); errors.Is(err3, thrift.ErrAbandonRequest) {
+				return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err3), EndpointError: err}
+			}
+		}
+		_exc17 := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing List: "+err2.Error())
+		if err2 := oprot.WriteMessageBegin(ctx, "List", thrift.EXCEPTION, seqId); err2 != nil {
+			_write_err16 = thrift.WrapTException(err2)
+		}
+		if err2 := _exc17.Write(ctx, oprot); _write_err16 == nil && err2 != nil {
+			_write_err16 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.WriteMessageEnd(ctx); _write_err16 == nil && err2 != nil {
+			_write_err16 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.Flush(ctx); _write_err16 == nil && err2 != nil {
+			_write_err16 = thrift.WrapTException(err2)
+		}
+		if _write_err16 != nil {
+			return false, &thrift.ProcessorError{WriteError: _write_err16, EndpointError: err}
+		}
+		return true, err
+	} else {
+		result.Success = retval
+	}
+	if err2 := oprot.WriteMessageBegin(ctx, "List", thrift.REPLY, seqId); err2 != nil {
+		_write_err16 = thrift.WrapTException(err2)
+	}
+	if err2 := result.Write(ctx, oprot); _write_err16 == nil && err2 != nil {
+		_write_err16 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.WriteMessageEnd(ctx); _write_err16 == nil && err2 != nil {
+		_write_err16 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.Flush(ctx); _write_err16 == nil && err2 != nil {
+		_write_err16 = thrift.WrapTException(err2)
+	}
+	if _write_err16 != nil {
+		return false, &thrift.ProcessorError{WriteError: _write_err16, EndpointError: err}
+	}
+	return true, err
+}
+
+type _courierordersProcessorPing struct{ handler Orders }
+
+func (p *_courierordersProcessorPing) Process(ctx context.Context, seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+	var _write_err18 thrift.TException
+	args := OrdersPingArgs{}
+	if err2 := args.Read(ctx, iprot); err2 != nil {
+		iprot.ReadMessageEnd(ctx)
+		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err2.Error())
+		oprot.WriteMessageBegin(ctx, "Ping", thrift.EXCEPTION, seqId)
+		x.Write(ctx, oprot)
+		oprot.WriteMessageEnd(ctx)
+		oprot.Flush(ctx)
+		return false, thrift.WrapTException(err2)
+	}
+	iprot.ReadMessageEnd(ctx)
+	result := OrdersPingResult{}
+	if err2 := p.handler.Ping(ctx); err2 != nil {
+		err = thrift.WrapTException(err2)
+		if errors.Is(err2, thrift.ErrAbandonRequest) {
+			return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err2), EndpointError: err}
+		}
+		if errors.Is(err2, context.Canceled) {
+			if err3 := context.Cause(ctx); errors.Is(err3, thrift.ErrAbandonRequest) {
+				return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err3), EndpointError: err}
+			}
+		}
+		_exc19 := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing Ping: "+err2.Error())
+		if err2 := oprot.WriteMessageBegin(ctx, "Ping", thrift.EXCEPTION, seqId); err2 != nil {
+			_write_err18 = thrift.WrapTException(err2)
+		}
+		if err2 := _exc19.Write(ctx, oprot); _write_err18 == nil && err2 != nil {
+			_write_err18 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.WriteMessageEnd(ctx); _write_err18 == nil && err2 != nil {
+			_write_err18 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.Flush(ctx); _write_err18 == nil && err2 != nil {
+			_write_err18 = thrift.WrapTException(err2)
+		}
+		if _write_err18 != nil {
+			return false, &thrift.ProcessorError{WriteError: _write_err18, EndpointError: err}
+		}
+		return true, err
+	}
+	if err2 := oprot.WriteMessageBegin(ctx, "Ping", thrift.REPLY, seqId); err2 != nil {
+		_write_err18 = thrift.WrapTException(err2)
+	}
+	if err2 := result.Write(ctx, oprot); _write_err18 == nil && err2 != nil {
+		_write_err18 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.WriteMessageEnd(ctx); _write_err18 == nil && err2 != nil {
+		_write_err18 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.Flush(ctx); _write_err18 == nil && err2 != nil {
+		_write_err18 = thrift.WrapTException(err2)
+	}
+	if _write_err18 != nil {
+		return false, &thrift.ProcessorError{WriteError: _write_err18, EndpointError: err}
+	}
+	return true, err
+}
 
 // OrdersAsyncClient provides synchronous and asynchronous service methods.
 // It shares the supplied core client and does not own its lifecycle.
@@ -134,7 +472,7 @@ func RegisterOrders(s *courier.Server, handler Orders) error {
 	return RegisterOrdersAs(s, "Orders", handler)
 }
 func RegisterOrdersAs(s *courier.Server, service string, handler Orders) error {
-	return s.Register(service, NewOrdersProcessor(handler))
+	return s.Register(service, NewOrdersCourierProcessor(handler))
 }
 
 // DialOrders creates a dedicated Courier client and its typed service wrapper.

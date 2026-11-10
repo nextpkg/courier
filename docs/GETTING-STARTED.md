@@ -69,6 +69,8 @@ thrift -out gen --gen go:skip_remote,package_prefix=example.com/courier-hello/ge
 go run github.com/nextpkg/courier/cmd/courier-gen -in gen/hello/hello.go -out gen/hello/hello_courier.go
 ```
 
+`courier-gen` 还会生成供 Courier 内存传输使用的 `NewGreeterCourierProcessor`，`RegisterGreeter`、`RegisterGreeterAs` 和 `ListenGreeter` 自动使用它；参数、返回值和异常处理沿用官方 Processor，省去无效的连接检查协程和 ticker，取消与截止时间继续使用请求 context。手动注册可调用 `server.Register("Greeter", hello.NewGreeterCourierProcessor(handler))`。重新生成已有的伴生文件即可采用这一行为；直接注册官方 `NewGreeterProcessor` 仍保留原检查，原生 Thrift 网络服务继续使用官方处理器，Courier 不修改 `thrift.ServerConnectivityCheckInterval` 全局设置。
+
 第一条命令生成 `gen/hello/hello.go` 等文件，其中包含 `Greeter` 接口与 Processor；第二条生成 `hello_courier.go`，补充 `ListenGreeter`、`DialGreeter`、注册函数及同步/异步客户端方法。生成文件无需手动编辑；修改 IDL 后重新运行这两条命令。
 
 ## 4. 实现业务方法

@@ -7,7 +7,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"sort"
+	kafka "github.com/nextpkg/courier/transport/kafka"
+	"os"
+	"runtime"
+	runtimeMetrics "runtime/metrics"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +23,8 @@ import (
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
 )
+
+var loadSharedClient = flag.Bool("kafka-load-shared-client", false, "share one transport across load clients")
 
 var loadPublishWorkers = flag.Int("kafka-publish-workers", 4, "publishing workers per client in TestKafkaLoadCurve")
 var loadConcurrency = flag.String("kafka-load-concurrency", "1,8,32,64,128", "comma-separated call concurrency levels in TestKafkaLoadCurve")
@@ -34,12 +40,26 @@ var loadPublishBuffers = flag.Int("kafka-publish-buffers", 256, "per-transport K
 var loadMixed = flag.Bool("kafka-load-mixed", false, "exercise two replicas each of Orders and Inventory with four methods")
 var loadTrials = flag.Int("kafka-load-trials", 3, "number of measured rounds per concurrency level")
 
+// Keep reply consumption independently tunable from request handling.
+var loadForwardBatches = flag.Int("kafka-forward-batches", 1, "maximum in-flight reply batches per endpoint")
+
+var loadReplyWorkers = flag.Int("kafka-reply-workers", 128, "client reply consumer workers; request workers stay independent")
+
 var loadResourceMetrics = flag.Bool("kafka-load-resources", false, "include Linux cgroup v2 measurements per round")
 
 // TestKafkaLoadCurve measures closed-loop load after transport startup and warmup.
-func TestKafkaLoadCurve(t *testing.T) {
+func TestKafkaLoadCurve(t *testing.T) { runLoadCurve(t) }
+
+func runLoadCurve(t *testing.T) {
+	gcSettings := []runtimeMetrics.Sample{{Name: "/gc/gogc:percent"}, {Name: "/gc/gomemlimit:bytes"}}
+	runtimeMetrics.Read(gcSettings)
+	t.Logf("GC_RUNTIME gogc=%d gomemlimit=%d", gcSettings[0].Value.Uint64(), gcSettings[1].Value.Uint64())
+
 	if *loadPublishWorkers < 1 || *loadDuration <= 0 || *loadTrials < 1 {
 		t.Fatal("publish workers, duration and trials must be positive")
+	}
+	if *loadReplyWorkers < 1 || *loadWindow < *loadReplyWorkers {
+		t.Fatal("invalid reply worker/window configuration")
 	}
 	if *loadServerWorkers < 1 || *loadWindow < *loadServerWorkers {
 		t.Fatal("kafka-load-window must be at least the positive kafka-server-workers value")
@@ -55,23 +75,42 @@ func TestKafkaLoadCurve(t *testing.T) {
 		}
 		levels = append(levels, n)
 	}
-	_, opts := newKafkaEnv(t, 3)
-	opts.PublishBuffers = *loadPublishBuffers
-	serverOpts := opts
-	serverOpts.Hooks = append(serverOpts.Hooks, &loadPublishErrors{t: t, role: "server"})
-	opts.Hooks = append(opts.Hooks, &loadPublishErrors{t: t, role: "client"})
-	serverOpts.Workers, serverOpts.Window = *loadServerWorkers, *loadWindow
-	serverTiming, clientTiming := newLoadDiagnostics(), newLoadDiagnostics()
-	if *loadDiagnosticsEnabled {
-		serverOpts.Hooks = append(serverOpts.Hooks, serverTiming)
-		opts.Hooks = append(opts.Hooks, clientTiming)
+	var transports []*kafka.Transport
+	var newTransport func(bool) courier.Transport
+	{
+		_, opts := newKafkaEnv(t, 3)
+		opts.PublishBuffers = *loadPublishBuffers
+		serverOpts := opts
+		if os.Getenv("REPLY_MODE") != "direct" {
+			serverOpts.DynamicReplyPartitions = true
+			opts.Workers, opts.Window = *loadReplyWorkers, *loadWindow
+			batchSize, _ := strconv.Atoi(os.Getenv("THRIFT_BATCH_SIZE"))
+			opts.ReplyRouter = &kafka.ReplyRouterOptions{BatchConcurrency: *loadForwardBatches, BatchSize: batchSize, ListenAddress: "127.0.0.1:0", AdvertiseURL: "http://127.0.0.1:0", AllowInsecureHTTP: true}
+		}
+		serverOpts.Hooks = append(serverOpts.Hooks, &loadPublishErrors{t: t, role: "server"})
+		opts.Hooks = append(opts.Hooks, &loadPublishErrors{t: t, role: "client"})
+		serverOpts.Workers, serverOpts.Window = *loadServerWorkers, *loadWindow
+		serverTiming, clientTiming := newLoadDiagnostics(), newLoadDiagnostics()
+		if *loadDiagnosticsEnabled {
+			serverOpts.Hooks = append(serverOpts.Hooks, serverTiming)
+			opts.Hooks = append(opts.Hooks, clientTiming)
+			defer serverTiming.report(t, "server")
+			defer clientTiming.report(t, "client")
+		}
+		newTransport = func(server bool) courier.Transport {
+			if server {
+				var tr courier.Transport = newKafkaTransport(t, serverOpts)
+				if *loadDiagnosticsEnabled {
+					tr = loadObservedTransport{tr, serverTiming}
+				}
+				return tr
+			}
+			tr := newKafkaTransport(t, opts)
+			transports = append(transports, tr)
+			return tr
+		}
 	}
-	var serverTransport courier.Transport = newKafkaTransport(t, serverOpts)
-	if *loadDiagnosticsEnabled {
-		serverTransport = loadObservedTransport{serverTransport, serverTiming}
-		defer serverTiming.report(t, "server")
-		defer clientTiming.report(t, "client")
-	}
+	serverTransport := newTransport(true)
 	server, err := demo.ListenOrders(context.Background(), serverTransport, &handlers.Orders{}, courier.ServerOptions{MaxConcurrent: *loadCoreConcurrency})
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +118,7 @@ func TestKafkaLoadCurve(t *testing.T) {
 	t.Cleanup(func() { closeTestResource(t, server) })
 	if *loadMixed {
 		for _, service := range []string{"Orders", "Inventory", "Inventory"} {
-			tr := newKafkaTransport(t, serverOpts)
+			tr := newTransport(true)
 			var replica *courier.Server
 			if service == "Orders" {
 				replica, err = demo.ListenOrders(context.Background(), tr, &handlers.Orders{}, courier.ServerOptions{MaxConcurrent: *loadCoreConcurrency})
@@ -94,8 +133,17 @@ func TestKafkaLoadCurve(t *testing.T) {
 	}
 	var requestSequence atomic.Uint64
 	var clients []*courier.Client
+	var shared courier.Transport
+	if *loadSharedClient {
+		shared = newTransport(false)
+	}
+
 	for i := 0; i < 3; i++ {
-		c, err := courier.NewClient(context.Background(), newKafkaTransport(t, opts), courier.ClientOptions{MaxInFlight: *loadMaxInFlight, DefaultTimeout: 8 * time.Second, PublishWorkers: *loadPublishWorkers})
+		tr := shared
+		if tr == nil {
+			tr = newTransport(false)
+		}
+		c, err := courier.NewClient(context.Background(), tr, courier.ClientOptions{MaxInFlight: *loadMaxInFlight, DefaultTimeout: 8 * time.Second, PublishWorkers: *loadPublishWorkers})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -109,15 +157,36 @@ func TestKafkaLoadCurve(t *testing.T) {
 		for trial := 1; trial <= *loadTrials; trial++ {
 			var mu sync.Mutex
 			var wg sync.WaitGroup
-			var latencies []float64
+			latencies := newLoadHistogram()
 			failures := 0
 			failureReasons := make(map[string]int)
 			completedMethods := make(map[string]int)
+			var readsBefore, matchedBefore, httpBefore, messagesBefore uint64
+			for _, tr := range transports {
+				readsBefore += tr.Stats().ReplyRecords
+				matchedBefore += tr.Stats().ReplyMatched
+				httpBefore += tr.RouterStats().HTTPRequests
+				messagesBefore += tr.RouterStats().HTTPMessages
+			}
 			var resourcesBefore map[string]uint64
 			if *loadResourceMetrics {
 				var err error
 				resourcesBefore, _, err = loadResources()
 				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			profiling := os.Getenv("COURIER_PROFILE") == "1"
+			var pf *os.File
+			var err error
+			if profiling {
+				pf, err = os.Create("/bench/" + os.Getenv("REPLY_MODE") + ".cpu")
+				if err != nil {
+					t.Fatal(err)
+				}
+				runtime.SetBlockProfileRate(0)
+				runtime.SetMutexProfileFraction(0)
+				if err := pprof.StartCPUProfile(pf); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -175,7 +244,7 @@ func TestKafkaLoadCurve(t *testing.T) {
 							}
 							failureReasons[reason]++
 						} else {
-							latencies = append(latencies, elapsed)
+							latencies.add(elapsed)
 							completedMethods[method]++
 						}
 						mu.Unlock()
@@ -184,16 +253,29 @@ func TestKafkaLoadCurve(t *testing.T) {
 			}
 			wg.Wait()
 			elapsed := time.Since(start).Seconds()
-			if len(latencies) == 0 {
+			if profiling {
+				pprof.StopCPUProfile()
+				pf.Close()
+				for _, name := range []string{"allocs", "block", "mutex"} {
+					f, err := os.Create("/bench/" + os.Getenv("REPLY_MODE") + "." + name)
+					if err != nil {
+						t.Fatal(err)
+					}
+					pprof.Lookup(name).WriteTo(f, 0)
+					f.Close()
+				}
+				runtime.SetBlockProfileRate(0)
+				runtime.SetMutexProfileFraction(0)
+			}
+			if latencies.count == 0 {
 				t.Fatal("no successful calls")
 			}
-			sort.Float64s(latencies)
-			percentile := func(p float64) float64 { return latencies[int(float64(len(latencies)-1)*p)] }
+			percentile := latencies.percentile
 			metrics := map[string]any{
 				"admission_seconds": loadDuration.Seconds(), "concurrency": concurrency, "trial": trial, "sessions": 3, "publish_workers": *loadPublishWorkers, "server_workers": *loadServerWorkers, "window": *loadWindow, "core_concurrency": *loadCoreConcurrency, "publish_buffers": *loadPublishBuffers, "max_in_flight": *loadMaxInFlight,
-				"mixed_services": *loadMixed, "completed_methods": completedMethods,
-				"successes": len(latencies), "failures": failures, "failure_reasons": failureReasons, "elapsed_seconds": elapsed,
-				"successful_calls_per_second": float64(len(latencies)) / elapsed,
+				"latency_bin_ms": 0.1, "latency_overflow": latencies.overflow, "transport": "kafka", "mixed_services": *loadMixed, "completed_methods": completedMethods,
+				"successes": latencies.count, "failures": failures, "failure_reasons": failureReasons, "elapsed_seconds": elapsed,
+				"successful_calls_per_second": float64(latencies.count) / elapsed,
 				"p50_ms":                      percentile(.50), "p95_ms": percentile(.95), "p99_ms": percentile(.99),
 			}
 			if *loadResourceMetrics {
@@ -207,6 +289,21 @@ func TestKafkaLoadCurve(t *testing.T) {
 				metrics["throttled_periods"] = after["nr_throttled"] - resourcesBefore["nr_throttled"]
 				metrics["memory_peak_bytes"] = after["memory_peak_bytes"]
 			}
+			var reads, matched, httpCalls, messages uint64
+			for _, tr := range transports {
+				reads += tr.Stats().ReplyRecords
+				matched += tr.Stats().ReplyMatched
+				httpCalls += tr.RouterStats().HTTPRequests
+				messages += tr.RouterStats().HTTPMessages
+			}
+			metrics["reply_reads"] = reads - readsBefore
+			metrics["reply_matched"] = matched - matchedBefore
+			metrics["http_requests"] = httpCalls - httpBefore
+			metrics["forward_messages"] = messages - messagesBefore
+			metrics["batch_limit"] = os.Getenv("THRIFT_BATCH_SIZE")
+			metrics["reply_mode"] = os.Getenv("REPLY_MODE")
+			metrics["reply_workers"] = *loadReplyWorkers
+			metrics["forward_batches"] = *loadForwardBatches
 			data, err := json.Marshal(metrics)
 			if err != nil {
 				t.Fatal(err)

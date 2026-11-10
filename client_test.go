@@ -297,3 +297,43 @@ func TestProtocolBounds(t *testing.T) {
 		t.Fatal("trailing bytes accepted")
 	}
 }
+
+func TestClientDrainWaitsAndRejectsNewCalls(t *testing.T) {
+	f := &fakeTransport{sent: make(chan Envelope, 1)}
+	c := newTestClient(t, f, ClientOptions{})
+	call, err := c.Submit(context.Background(), "A", "Get", &unit{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := <-f.sent
+	done := make(chan error, 1)
+	go func() { done <- c.Drain(context.Background()) }()
+	deadline := time.Now().Add(time.Second)
+	for {
+		c.mu.Lock()
+		closed := c.closed
+		c.mu.Unlock()
+		if closed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("drain did not start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if _, err := c.Submit(context.Background(), "A", "Get", &unit{}); !errors.Is(err, ErrClosed) {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+		t.Fatal("drain returned before pending reply")
+	default:
+	}
+	f.respond(e)
+	if _, err := call.Await(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

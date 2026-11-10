@@ -4,9 +4,277 @@ package shapes
 
 import (
 	context "context"
+	errors "errors"
 	fmt "fmt"
+	thrift "github.com/apache/thrift/lib/go/thrift"
 	courier "github.com/nextpkg/courier"
 )
+
+func NewShapesCourierProcessor(handler Shapes) *ShapesProcessor {
+	self12 := &ShapesProcessor{handler: handler, processorMap: make(map[string]thrift.TProcessorFunction)}
+	self12.processorMap["Ping"] = &_couriershapesProcessorPing{handler: handler}
+	self12.processorMap["Check"] = &_couriershapesProcessorCheck{handler: handler}
+	self12.processorMap["Echo"] = &_couriershapesProcessorEcho{handler: handler}
+	self12.processorMap["Nest"] = &_couriershapesProcessorNest{handler: handler}
+	return self12
+}
+
+type _couriershapesProcessorPing struct{ handler Shapes }
+
+func (p *_couriershapesProcessorPing) Process(ctx context.Context, seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+	var _write_err14 thrift.TException
+	args := ShapesPingArgs{}
+	if err2 := args.Read(ctx, iprot); err2 != nil {
+		iprot.ReadMessageEnd(ctx)
+		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err2.Error())
+		oprot.WriteMessageBegin(ctx, "Ping", thrift.EXCEPTION, seqId)
+		x.Write(ctx, oprot)
+		oprot.WriteMessageEnd(ctx)
+		oprot.Flush(ctx)
+		return false, thrift.WrapTException(err2)
+	}
+	iprot.ReadMessageEnd(ctx)
+	result := ShapesPingResult{}
+	if err2 := p.handler.Ping(ctx); err2 != nil {
+		err = thrift.WrapTException(err2)
+		if errors.Is(err2, thrift.ErrAbandonRequest) {
+			return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err2), EndpointError: err}
+		}
+		if errors.Is(err2, context.Canceled) {
+			if err3 := context.Cause(ctx); errors.Is(err3, thrift.ErrAbandonRequest) {
+				return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err3), EndpointError: err}
+			}
+		}
+		_exc15 := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing Ping: "+err2.Error())
+		if err2 := oprot.WriteMessageBegin(ctx, "Ping", thrift.EXCEPTION, seqId); err2 != nil {
+			_write_err14 = thrift.WrapTException(err2)
+		}
+		if err2 := _exc15.Write(ctx, oprot); _write_err14 == nil && err2 != nil {
+			_write_err14 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.WriteMessageEnd(ctx); _write_err14 == nil && err2 != nil {
+			_write_err14 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.Flush(ctx); _write_err14 == nil && err2 != nil {
+			_write_err14 = thrift.WrapTException(err2)
+		}
+		if _write_err14 != nil {
+			return false, &thrift.ProcessorError{WriteError: _write_err14, EndpointError: err}
+		}
+		return true, err
+	}
+	if err2 := oprot.WriteMessageBegin(ctx, "Ping", thrift.REPLY, seqId); err2 != nil {
+		_write_err14 = thrift.WrapTException(err2)
+	}
+	if err2 := result.Write(ctx, oprot); _write_err14 == nil && err2 != nil {
+		_write_err14 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.WriteMessageEnd(ctx); _write_err14 == nil && err2 != nil {
+		_write_err14 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.Flush(ctx); _write_err14 == nil && err2 != nil {
+		_write_err14 = thrift.WrapTException(err2)
+	}
+	if _write_err14 != nil {
+		return false, &thrift.ProcessorError{WriteError: _write_err14, EndpointError: err}
+	}
+	return true, err
+}
+
+type _couriershapesProcessorCheck struct{ handler Shapes }
+
+func (p *_couriershapesProcessorCheck) Process(ctx context.Context, seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+	var _write_err16 thrift.TException
+	args := ShapesCheckArgs{}
+	if err2 := args.Read(ctx, iprot); err2 != nil {
+		iprot.ReadMessageEnd(ctx)
+		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err2.Error())
+		oprot.WriteMessageBegin(ctx, "Check", thrift.EXCEPTION, seqId)
+		x.Write(ctx, oprot)
+		oprot.WriteMessageEnd(ctx)
+		oprot.Flush(ctx)
+		return false, thrift.WrapTException(err2)
+	}
+	iprot.ReadMessageEnd(ctx)
+	result := ShapesCheckResult{}
+	if err2 := p.handler.Check(ctx, args.Fail); err2 != nil {
+		err = thrift.WrapTException(err2)
+		switch v := err2.(type) {
+		case *ShapeError:
+			result.Problem = v
+		default:
+			if errors.Is(err2, thrift.ErrAbandonRequest) {
+				return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err2), EndpointError: err}
+			}
+			if errors.Is(err2, context.Canceled) {
+				if err3 := context.Cause(ctx); errors.Is(err3, thrift.ErrAbandonRequest) {
+					return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err3), EndpointError: err}
+				}
+			}
+			_exc17 := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing Check: "+err2.Error())
+			if err2 := oprot.WriteMessageBegin(ctx, "Check", thrift.EXCEPTION, seqId); err2 != nil {
+				_write_err16 = thrift.WrapTException(err2)
+			}
+			if err2 := _exc17.Write(ctx, oprot); _write_err16 == nil && err2 != nil {
+				_write_err16 = thrift.WrapTException(err2)
+			}
+			if err2 := oprot.WriteMessageEnd(ctx); _write_err16 == nil && err2 != nil {
+				_write_err16 = thrift.WrapTException(err2)
+			}
+			if err2 := oprot.Flush(ctx); _write_err16 == nil && err2 != nil {
+				_write_err16 = thrift.WrapTException(err2)
+			}
+			if _write_err16 != nil {
+				return false, &thrift.ProcessorError{WriteError: _write_err16, EndpointError: err}
+			}
+			return true, err
+		}
+	}
+	if err2 := oprot.WriteMessageBegin(ctx, "Check", thrift.REPLY, seqId); err2 != nil {
+		_write_err16 = thrift.WrapTException(err2)
+	}
+	if err2 := result.Write(ctx, oprot); _write_err16 == nil && err2 != nil {
+		_write_err16 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.WriteMessageEnd(ctx); _write_err16 == nil && err2 != nil {
+		_write_err16 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.Flush(ctx); _write_err16 == nil && err2 != nil {
+		_write_err16 = thrift.WrapTException(err2)
+	}
+	if _write_err16 != nil {
+		return false, &thrift.ProcessorError{WriteError: _write_err16, EndpointError: err}
+	}
+	return true, err
+}
+
+type _couriershapesProcessorEcho struct{ handler Shapes }
+
+func (p *_couriershapesProcessorEcho) Process(ctx context.Context, seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+	var _write_err18 thrift.TException
+	args := ShapesEchoArgs{}
+	if err2 := args.Read(ctx, iprot); err2 != nil {
+		iprot.ReadMessageEnd(ctx)
+		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err2.Error())
+		oprot.WriteMessageBegin(ctx, "Echo", thrift.EXCEPTION, seqId)
+		x.Write(ctx, oprot)
+		oprot.WriteMessageEnd(ctx)
+		oprot.Flush(ctx)
+		return false, thrift.WrapTException(err2)
+	}
+	iprot.ReadMessageEnd(ctx)
+	result := ShapesEchoResult{}
+	if retval, err2 := p.handler.Echo(ctx, args.Data); err2 != nil {
+		err = thrift.WrapTException(err2)
+		if errors.Is(err2, thrift.ErrAbandonRequest) {
+			return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err2), EndpointError: err}
+		}
+		if errors.Is(err2, context.Canceled) {
+			if err3 := context.Cause(ctx); errors.Is(err3, thrift.ErrAbandonRequest) {
+				return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err3), EndpointError: err}
+			}
+		}
+		_exc19 := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing Echo: "+err2.Error())
+		if err2 := oprot.WriteMessageBegin(ctx, "Echo", thrift.EXCEPTION, seqId); err2 != nil {
+			_write_err18 = thrift.WrapTException(err2)
+		}
+		if err2 := _exc19.Write(ctx, oprot); _write_err18 == nil && err2 != nil {
+			_write_err18 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.WriteMessageEnd(ctx); _write_err18 == nil && err2 != nil {
+			_write_err18 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.Flush(ctx); _write_err18 == nil && err2 != nil {
+			_write_err18 = thrift.WrapTException(err2)
+		}
+		if _write_err18 != nil {
+			return false, &thrift.ProcessorError{WriteError: _write_err18, EndpointError: err}
+		}
+		return true, err
+	} else {
+		result.Success = retval
+	}
+	if err2 := oprot.WriteMessageBegin(ctx, "Echo", thrift.REPLY, seqId); err2 != nil {
+		_write_err18 = thrift.WrapTException(err2)
+	}
+	if err2 := result.Write(ctx, oprot); _write_err18 == nil && err2 != nil {
+		_write_err18 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.WriteMessageEnd(ctx); _write_err18 == nil && err2 != nil {
+		_write_err18 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.Flush(ctx); _write_err18 == nil && err2 != nil {
+		_write_err18 = thrift.WrapTException(err2)
+	}
+	if _write_err18 != nil {
+		return false, &thrift.ProcessorError{WriteError: _write_err18, EndpointError: err}
+	}
+	return true, err
+}
+
+type _couriershapesProcessorNest struct{ handler Shapes }
+
+func (p *_couriershapesProcessorNest) Process(ctx context.Context, seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+	var _write_err20 thrift.TException
+	args := ShapesNestArgs{}
+	if err2 := args.Read(ctx, iprot); err2 != nil {
+		iprot.ReadMessageEnd(ctx)
+		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err2.Error())
+		oprot.WriteMessageBegin(ctx, "Nest", thrift.EXCEPTION, seqId)
+		x.Write(ctx, oprot)
+		oprot.WriteMessageEnd(ctx)
+		oprot.Flush(ctx)
+		return false, thrift.WrapTException(err2)
+	}
+	iprot.ReadMessageEnd(ctx)
+	result := ShapesNestResult{}
+	if retval, err2 := p.handler.Nest(ctx, args.Values); err2 != nil {
+		err = thrift.WrapTException(err2)
+		if errors.Is(err2, thrift.ErrAbandonRequest) {
+			return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err2), EndpointError: err}
+		}
+		if errors.Is(err2, context.Canceled) {
+			if err3 := context.Cause(ctx); errors.Is(err3, thrift.ErrAbandonRequest) {
+				return false, &thrift.ProcessorError{WriteError: thrift.WrapTException(err3), EndpointError: err}
+			}
+		}
+		_exc21 := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing Nest: "+err2.Error())
+		if err2 := oprot.WriteMessageBegin(ctx, "Nest", thrift.EXCEPTION, seqId); err2 != nil {
+			_write_err20 = thrift.WrapTException(err2)
+		}
+		if err2 := _exc21.Write(ctx, oprot); _write_err20 == nil && err2 != nil {
+			_write_err20 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.WriteMessageEnd(ctx); _write_err20 == nil && err2 != nil {
+			_write_err20 = thrift.WrapTException(err2)
+		}
+		if err2 := oprot.Flush(ctx); _write_err20 == nil && err2 != nil {
+			_write_err20 = thrift.WrapTException(err2)
+		}
+		if _write_err20 != nil {
+			return false, &thrift.ProcessorError{WriteError: _write_err20, EndpointError: err}
+		}
+		return true, err
+	} else {
+		result.Success = retval
+	}
+	if err2 := oprot.WriteMessageBegin(ctx, "Nest", thrift.REPLY, seqId); err2 != nil {
+		_write_err20 = thrift.WrapTException(err2)
+	}
+	if err2 := result.Write(ctx, oprot); _write_err20 == nil && err2 != nil {
+		_write_err20 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.WriteMessageEnd(ctx); _write_err20 == nil && err2 != nil {
+		_write_err20 = thrift.WrapTException(err2)
+	}
+	if err2 := oprot.Flush(ctx); _write_err20 == nil && err2 != nil {
+		_write_err20 = thrift.WrapTException(err2)
+	}
+	if _write_err20 != nil {
+		return false, &thrift.ProcessorError{WriteError: _write_err20, EndpointError: err}
+	}
+	return true, err
+}
 
 // ShapesAsyncClient provides synchronous and asynchronous service methods.
 // It shares the supplied core client and does not own its lifecycle.
@@ -25,7 +293,7 @@ func RegisterShapes(s *courier.Server, handler Shapes) error {
 	return RegisterShapesAs(s, "Shapes", handler)
 }
 func RegisterShapesAs(s *courier.Server, service string, handler Shapes) error {
-	return s.Register(service, NewShapesProcessor(handler))
+	return s.Register(service, NewShapesCourierProcessor(handler))
 }
 
 // DialShapes creates a dedicated Courier client and its typed service wrapper.

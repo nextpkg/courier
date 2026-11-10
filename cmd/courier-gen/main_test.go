@@ -84,6 +84,8 @@ func TestUnsupportedCompilerAndServiceShapes(t *testing.T) {
 		message string
 	}{
 		{"helper collision", append(append([]byte{}, src...), []byte("\ntype DialOrders struct{}\n")...), "generated helper name collision"},
+		{"connectivity shape", bytes.ReplaceAll(src, []byte("thrift.ServerConnectivityCheckInterval > 0"), []byte("false")), "expected one connectivity check"},
+		{"processor collision", append(append([]byte{}, src...), []byte("\ntype NewOrdersCourierProcessor struct{}\n")...), "generated helper name collision"},
 		{"compiler", bytes.ReplaceAll(src, []byte("Compiler (0.25.0)"), []byte("Compiler (0.24.0)")), "expected official"},
 		{"oneway", bytes.Replace(src, []byte("&_args2, &_result4"), []byte("&_args2, nil"), 1), "oneway"},
 		{"inheritance", append(append([]byte{}, src...), []byte("\ntype Child interface { Orders }\n")...), "inheritance"},

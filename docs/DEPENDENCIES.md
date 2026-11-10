@@ -14,7 +14,7 @@
 
 ## 模块边界
 
-核心运行库依赖标准库和 Thrift；代码生成扩展使用 Go 标准库。三个传输适配器分别引入自己的 SDK，应用可按所需后端选择依赖。示例、部署工具和集成测试位于 `examples` 模块。
+核心运行库依赖标准库和 Thrift；代码生成扩展使用 Go 标准库。四个传输适配器分别引入自己的 SDK，应用可按所需后端选择依赖。示例、部署工具和集成测试位于 `examples` 模块。
 
 内存适配器使用 Watermill 的消息类型和 GoChannel，由适配器管理服务竞争消费和并发上限。NATS 适配器使用原生 Core NATS 接口；Kafka 适配器使用 franz-go 的发布确认、手动提交和重平衡接口。Kafka 管理操作位于 `examples/brokeradmin`，运行时不创建 topic。
 

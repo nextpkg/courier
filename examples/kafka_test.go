@@ -4,11 +4,11 @@ package examples_test
 
 import (
 	"context"
+	"fmt"
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/brokeradmin"
 	"github.com/nextpkg/courier/examples/contract"
 	transport "github.com/nextpkg/courier/transport/kafka"
-	"fmt"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"os"
 	"strings"

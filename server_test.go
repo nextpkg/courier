@@ -2,7 +2,6 @@ package courier
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -33,7 +32,7 @@ func TestErrorReplyBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := Envelope{Version: ProtocolVersion, Kind: "request", Service: "S", Method: "Ping", ID: "id", Session: "session", Deadline: time.Now().Add(time.Minute).UnixNano(), Reply: Route{Topic: "replies", Partition: 0}, Payload: payload}
-	// Find the largest admissible metadata budget, including escaped JSON.
+	// Find the largest admissible metadata budget, including binary framing.
 	for {
 		next := e
 		next.Service += "\""
@@ -74,7 +73,7 @@ func TestErrorReplyBudget(t *testing.T) {
 	if _, err := EncodeEnvelope(e, limit); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("oversized metadata admitted: %v", err)
 	}
-	raw, err := json.Marshal(e)
+	raw, err := EncodeEnvelope(e, DefaultMaxFrameBytes)
 	if err != nil || len(raw) > limit {
 		t.Fatalf("invalid raw fixture: size=%d, %v", len(raw), err)
 	}

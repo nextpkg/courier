@@ -157,7 +157,7 @@ func TestLargeRequestAndResponse(t *testing.T) {
 		t.Fatalf("request limit=%v", err)
 	}
 	// Repeated IDs fit in the request more cheaply than full returned Item structs.
-	_, err = demo.NewOrdersAsyncClient(c).List(ctx, []string{"one", "two", "three", "four", "five"})
+	_, err = demo.NewOrdersAsyncClient(c).List(ctx, []string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"})
 	var remote *courier.RPCError
 	if !errors.As(err, &remote) || remote.Code != "too_large" {
 		t.Fatalf("response limit=%v", err)

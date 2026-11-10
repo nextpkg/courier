@@ -82,8 +82,8 @@ func (d *loadDiagnostics) OnBrokerE2E(_ kgo.BrokerMetadata, key int16, e kgo.Bro
 	d.addLocked(name+"_write_wait", e.WriteWait)
 }
 func (d *loadDiagnostics) OnFetchRecordBuffered(r *kgo.Record) {
-	var e courier.Envelope
-	if json.Unmarshal(r.Value, &e) != nil || e.Kind != "request" {
+	e, err := courier.DecodeEnvelope(r.Value, courier.DefaultMaxFrameBytes)
+	if err != nil || e.Kind != "request" {
 		return
 	}
 	d.mu.Lock()
@@ -92,8 +92,7 @@ func (d *loadDiagnostics) OnFetchRecordBuffered(r *kgo.Record) {
 }
 func (d *loadDiagnostics) wrap(h courier.Handler) courier.Handler {
 	return func(ctx context.Context, b []byte) ([]byte, error) {
-		var e courier.Envelope
-		_ = json.Unmarshal(b, &e)
+		e, _ := courier.DecodeEnvelope(b, courier.DefaultMaxFrameBytes)
 		d.mu.Lock()
 		if start, ok := d.fetched[e.ID]; ok {
 			d.addLocked("fetch_buffer_to_handler", time.Since(start))

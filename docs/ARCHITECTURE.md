@@ -50,7 +50,7 @@ Thrift 的分层职责见 [官方 Concepts](https://thrift.apache.org/docs/conce
 
 ## 消息格式与调用生命周期
 
-外层使用 JSON envelope，包含协议版本、request/response 类型、服务名、方法名、随机 128 位 session 和请求 ID、绝对截止时间、回复地址与 Thrift binary payload；业务字段由 Thrift 编解码，`[]byte` payload 在 JSON 中占用 base64 空间。
+外层使用 Thrift binary envelope，包含协议版本、request/response 类型、服务名、方法名、随机 128 位 session 和请求 ID、绝对截止时间、回复地址与 Thrift binary payload；业务字段同样由 Thrift 编解码，payload 直接按二进制字节传输。
 
 1. 创建 Client 时先建立回复入口，再允许接收调用。
 2. 生成客户端序列化参数，将调用交给核心的有界发送队列并取得 Future。
@@ -129,6 +129,6 @@ Thrift 的分层职责见 [官方 Concepts](https://thrift.apache.org/docs/conce
 | MaxInFlight | 256 | 每个 Client 的在途调用 |
 | PublishWorkers | 4 | 每个 Client 的发送 worker |
 | MaxConcurrent | 32 | 每个 Server 的并发 handler |
-| MaxFrameBytes | 1 MiB | 整个封装帧，包含 JSON/base64 与元数据 |
+| MaxFrameBytes | 1 MiB | 整个封装帧，包含二进制信封与元数据 |
 
 以上是核心默认值；适配器另有独立资源限制，不能用某个队列或帧的上限推导整个进程的内存占用。Kafka 参数见 [资源预算](KAFKA.md#资源预算)，CPU 档位与实测依据见 [容量规划](KAFKA-CAPACITY.md)。

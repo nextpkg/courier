@@ -27,6 +27,31 @@ func (t *Transport) Listen(ctx context.Context, service string, h courier.Handle
 	return t.ListenServices(ctx, map[string]courier.Handler{service: h})
 }
 
+type decodedRequestKey struct{}
+type decodedRequest struct {
+	envelope courier.Envelope
+	size     int
+}
+
+// Reuse the envelope already decoded and validated by the transport. Preserve
+// its original byte length so the core still enforces its own frame limit.
+func (t *Transport) ListenEnvelopeServices(ctx context.Context, handlers map[string]courier.EnvelopeHandler) (courier.Subscription, error) {
+	raw := make(map[string]courier.Handler, len(handlers))
+	for service, handler := range handlers {
+		if handler == nil {
+			return nil, fmt.Errorf("kafka: nil handler")
+		}
+		raw[service] = func(ctx context.Context, data []byte) ([]byte, error) {
+			request, ok := ctx.Value(decodedRequestKey{}).(*decodedRequest)
+			if !ok {
+				return nil, fmt.Errorf("kafka: missing validated envelope")
+			}
+			return handler(ctx, request.envelope, request.size)
+		}
+	}
+	return t.ListenServices(context.WithValue(ctx, decodedRequestKey{}, true), raw)
+}
+
 // ListenServices validates shared-topic aliases before starting any consumer.
 // Every replica consuming a topic must register its entire configured bundle.
 func (t *Transport) ListenServices(parent context.Context, handlers map[string]courier.Handler) (courier.Subscription, error) {
@@ -193,11 +218,15 @@ func (w *window) committed(counts map[int32]int) int {
 	return total
 }
 func (t *Transport) consume(parent context.Context, topic string, handlers map[string]courier.Handler, ready func()) error {
+	return t.consumeGroup(parent, topic, t.Group(topic), func(ctx context.Context, r *kgo.Record) error { return t.handle(ctx, handlers, r) }, ready)
+}
+
+func (t *Transport) consumeGroup(parent context.Context, topic, group string, handle func(context.Context, *kgo.Record) error, ready func()) error {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var wantsRebalance atomic.Bool
 	opts := t.opts.base()
-	opts = append(opts, kgo.ConsumeTopics(topic), kgo.ConsumerGroup(t.Group(topic)), kgo.DisableAutoCommit(), kgo.BlockRebalanceOnPoll(), kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()), kgo.SessionTimeout(6*time.Second), kgo.HeartbeatInterval(time.Second), kgo.RebalanceTimeout(t.opts.RebalanceTimeout), kgo.OnPartitionsAssigned(func(context.Context, *kgo.Client, map[string][]int32) {
+	opts = append(opts, kgo.ConsumeTopics(topic), kgo.ConsumerGroup(group), kgo.MetadataMaxAge(t.metadataTTL()), kgo.DisableAutoCommit(), kgo.BlockRebalanceOnPoll(), kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()), kgo.SessionTimeout(6*time.Second), kgo.HeartbeatInterval(time.Second), kgo.RebalanceTimeout(t.opts.RebalanceTimeout), kgo.OnPartitionsAssigned(func(context.Context, *kgo.Client, map[string][]int32) {
 		wantsRebalance.Store(false)
 		t.assignments.Add(1)
 		ready()
@@ -222,7 +251,7 @@ func (t *Transport) consume(parent context.Context, topic string, handlers map[s
 					if ctx.Err() != nil {
 						return
 					}
-					err := t.handle(ctx, handlers, e.record)
+					err := handle(ctx, e.record)
 					results <- completion{e, err}
 				}
 			}
@@ -318,9 +347,21 @@ func (t *Transport) handle(parent context.Context, handlers map[string]courier.H
 		t.opts.Logger.Warn("Kafka discarded unroutable record", "topic", r.Topic, "partition", r.Partition, "offset", r.Offset)
 		return nil
 	}
+	if t.opts.DynamicReplyPartitions || t.opts.ReplyRouter != nil {
+		if err := t.validateLiveReply(parent, e.Reply); err != nil {
+			if errors.Is(err, errReplyPartition) {
+				t.discarded.Add(1)
+				return nil
+			}
+			return err
+		}
+	}
 	ctx, cancel := context.WithTimeout(parent, t.opts.ProcessingTimeout)
 	defer cancel()
 	t.handled.Add(1)
+	if parent.Value(decodedRequestKey{}) == true {
+		ctx = context.WithValue(ctx, decodedRequestKey{}, &decodedRequest{envelope: e, size: len(r.Value)})
+	}
 	out, err := handlers[e.Service](ctx, r.Value)
 	if err == nil && len(out) > t.opts.MaxFrameBytes {
 		err = courier.ErrTooLarge
@@ -337,7 +378,7 @@ func (t *Transport) handle(parent context.Context, handlers map[string]courier.H
 	}
 	// Let an already-produced response finish its bounded acknowledgement
 	// during listener shutdown, before the final contiguous commit.
-	err = t.publish(t.ctx, &kgo.Record{Topic: e.Reply.Topic, Partition: e.Reply.Partition, Key: []byte(e.Session), Value: out})
+	err = t.publish(t.ctx, &kgo.Record{Topic: e.Reply.Topic, Partition: e.Reply.Partition, Key: []byte(e.Session), Value: out, Headers: replyHeaders(r.Headers)})
 	if err == nil {
 		t.responded.Add(1)
 	}
