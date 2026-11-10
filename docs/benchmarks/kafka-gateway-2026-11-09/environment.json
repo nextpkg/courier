@@ -1,0 +1,44 @@
+{
+  "docker": {
+    "Architecture": "aarch64",
+    "OSType": "linux",
+    "OperatingSystem": "OrbStack",
+    "KernelVersion": "7.2.12-orbstack-00394-gbecdd6130068",
+    "NCPU": 8,
+    "MemTotal": 8392994816,
+    "ServerVersion": "29.8.2"
+  },
+  "kafka_image": {
+    "Id": "sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f",
+    "RepoDigests": [
+      "apache/kafka@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+    ],
+    "Architecture": "arm64"
+  },
+  "binary_sha256": "820cb4a604e753388494716d951a28c207790b4bfbc191f7ef99a82a42bc3cad",
+  "application_limits": "4 CPU / 1 GiB, GOMAXPROCS=4; default GC",
+  "broker_limits": "2 CPU / 3 GiB, Xms256m Xmx512m",
+  "protocol": "v1 binary; trusted internal deployment; no HMAC",
+  "sampling": "30s measured load per round, 5s separate warm process; fresh broker per round; two reverse-order rounds per cell; no CPU/alloc profile enabled",
+  "go_version": "go1.27.3",
+  "source_revision": "Content-identified source snapshot; verify source-sha256.json before associating these results with a commit.",
+  "concurrency_levels": [
+    256,
+    512,
+    768,
+    1024,
+    1280,
+    1536,
+    2048,
+    3072
+  ],
+  "sessions": 3,
+  "workers": {
+    "publish": 128,
+    "server": 128,
+    "reply": 128
+  },
+  "window": 1024,
+  "batch_size": 32,
+  "forward_batches": 2
+}

@@ -1,0 +1,16 @@
+{
+  "base_source_manifest": "../kafka-gateway-2026-11-09/source-sha256.json",
+  "changed_files_sha256": {
+    "transport/kafka/forward_item_pool.go": "3277884d2f25026ec05a443b01f08a5eedfca8b4420b54afccc9732763690d4f",
+    "transport/kafka/router.go": "3d6dfa195e620f648b18acf5c382d2e1b5e88e000f1c8d2538cc6ddda9dfd6b4",
+    "transport/kafka/router_async.go": "72ebd693bccaf9f203fc71420fff60c82eefff07d604240bd89b027dfaec9c66",
+    "transport/kafka/router_async_test.go": "406227e1a630e68eb1187d68b8ddef06ba97326c53ccbc4d75323cf53de57fe7",
+    "transport/kafka/router_batch.go": "248da32d1ce1b880b19f8a2962e6c72a9d0457b2d91f716f8b5a2395d009d9bb",
+    "transport/kafka/server.go": "181ea3fa351a3039563f73eed18725ab5df424f3034676c05a62a0a7392cb10b"
+  },
+  "binaries": {
+    "base.test": "820cb4a604e753388494716d951a28c207790b4bfbc191f7ef99a82a42bc3cad",
+    "candidate.test": "cc4e013b7a9a8db5a58ba1a018193ffe604ad0d7eda7ed7887ba59e62c303608"
+  },
+  "candidate_adopted": false
+}
