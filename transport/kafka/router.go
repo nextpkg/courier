@@ -13,7 +13,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -135,31 +134,9 @@ func replyHeaders(headers []kgo.RecordHeader) []kgo.RecordHeader {
 	return nil
 }
 func (t *Transport) startReplyRouter(ctx context.Context) (*replyRouter, error) {
-	o := *t.opts.ReplyRouter
-	if o.ForwardProtocol == "" {
-		o.ForwardProtocol = "http"
-	}
-	if o.ForwardProtocol != "http" && o.ForwardProtocol != "thrift" {
-		return nil, fmt.Errorf("kafka: unknown reply forwarding protocol %q", o.ForwardProtocol)
-	}
-	if o.MaxReplyAge == 0 {
-		o.MaxReplyAge = 30 * time.Second
-	}
-	if o.DedupEntries == 0 {
-		o.DedupEntries = 4096
-	}
-	if o.Group == "" {
-		o.Group = t.opts.Prefix + ".reply-router." + t.opts.ReplyTopic
-	}
-	u, err := url.Parse(o.AdvertiseURL)
-	if err != nil || u == nil || u.Hostname() == "" || u.Port() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || (u.Scheme != "https" && !(u.Scheme == "http" && o.AllowInsecureHTTP)) || o.ListenAddress == "" || o.MaxReplyAge < time.Millisecond || o.MaxReplyAge > t.opts.ProcessingTimeout || o.DedupEntries < 1 || o.DedupEntries > 65536 || o.BatchSize < 0 || o.BatchSize > 32 || o.BatchConcurrency < 0 || o.BatchConcurrency > 2 {
-		return nil, fmt.Errorf("kafka: invalid reply router endpoint or limits")
-	}
-	if o.ForwardProtocol == "thrift" && (u.Scheme != "http" || o.ServerTLS != nil || o.ClientTLS != nil) {
-		return nil, fmt.Errorf("kafka: thrift reply forwarding requires trusted plaintext endpoints; use http forwarding for TLS")
-	}
-	if u.Scheme == "https" && (o.ServerTLS == nil || len(o.ServerTLS.Certificates) == 0 && o.ServerTLS.GetCertificate == nil) {
-		return nil, fmt.Errorf("kafka: HTTPS reply router requires server certificate")
+	o, u, err := normalizeReplyRouter(*t.opts.ReplyRouter, t.opts)
+	if err != nil {
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -499,34 +476,13 @@ func (r *replyRouter) forward(ctx context.Context, record *kgo.Record) error {
 		if f.Endpoint == r.endpoint {
 			// Local delivery materializes only after inbox/duplicate checks.
 			status = r.deliverView(f, record.Value, view)
-		} else if r.opts.BatchSize > 1 {
-			status = r.enqueueForward(life, f.Endpoint, f.Instance, f.Expires, record.Value)
-		} else if r.rpc != nil {
-			r.httpRequests.Add(1)
-			r.httpMessages.Add(1)
-			endpoint, err := url.Parse(f.Endpoint)
-			if err != nil {
-				return err
-			}
-			result, err := r.rpc.forward(life, endpoint.Host, "Forward", header, record.Value, int64(r.t.opts.MaxFrameBytes))
-			if err == nil {
-				status = result.status
-			}
 		} else {
-			r.httpRequests.Add(1)
-			r.httpMessages.Add(1)
-			req, err := http.NewRequestWithContext(life, "POST", f.Endpoint+"/courier/reply", bytes.NewReader(record.Value))
+			status, err = r.forwardRemote(life, f, header, record.Value)
 			if err != nil {
 				return err
-			}
-			req.Header.Set("X-Courier-Route", "base64:"+base64.StdEncoding.EncodeToString(header))
-			resp, err := r.client.Do(req)
-			if err == nil {
-				status = resp.StatusCode
-				_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-				_ = resp.Body.Close()
 			}
 		}
+
 		switch status {
 		case http.StatusNoContent:
 			r.forwarded.Add(1)
