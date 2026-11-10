@@ -6,12 +6,13 @@ import (
 	"context"
 	"fmt"
 	"github.com/nextpkg/courier/examples/internal/kafkatest"
-	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/nextpkg/courier"
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -31,14 +32,13 @@ func TestKafkaSharedReplyReader(t *testing.T) {
 			}
 			got <- e.ID
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		inboxes = append(inboxes, inbox)
-		t.Cleanup(func() { testutil.Close(t, inbox) })
+		t.Cleanup(func() { testcheck.Close(t, inbox) })
 	}
 	if dup, err := tr.OpenInbox(ctx, "0", func([]byte) {}); err == nil {
-		testutil.Close(t, dup)
+		testcheck.Close(t, dup)
 		t.Fatal("duplicate session accepted")
 	}
 	publish := func(session, id string) {
@@ -69,9 +69,8 @@ func TestKafkaSharedReplyReader(t *testing.T) {
 	if s := tr.Stats(); s.ReplyRecords != 30 || s.ReplyMatched != 30 {
 		t.Fatalf("expected one read per reply: %+v", s)
 	}
-	if err := inboxes[0].Close(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, inboxes[0].Close(ctx))
+
 	publish("0", "closed")
 	publish("1", "survivor")
 	select {
@@ -82,9 +81,8 @@ func TestKafkaSharedReplyReader(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	if err := tr.Close(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, tr.Close(ctx))
+
 	for _, inbox := range inboxes {
 		select {
 		case <-inbox.Done():
@@ -111,9 +109,8 @@ func TestKafkaSharedReaderSkipsNewSessionHistory(t *testing.T) {
 		case <-ctx.Done():
 		}
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	publish := func(session, id string) {
 		e := courier.Envelope{Version: 1, Kind: "response", Service: "Orders", Method: "Get", ID: id, Session: session, Reply: a.Route()}
 		data, err := courier.EncodeEnvelope(e, courier.DefaultMaxFrameBytes)
@@ -133,9 +130,8 @@ func TestKafkaSharedReaderSkipsNewSessionHistory(t *testing.T) {
 	publish("b", "historical")
 	got := make(chan string, 2)
 	b, err := tr.OpenInbox(ctx, "b", func(data []byte) { e, _ := courier.DecodeEnvelope(data, courier.DefaultMaxFrameBytes); got <- e.ID })
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	publish("b", "live")
 	unblock()
 	select {
@@ -146,10 +142,7 @@ func TestKafkaSharedReaderSkipsNewSessionHistory(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	if err := b.Close(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.Close(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, b.Close(ctx))
+	require.NoError(t, a.Close(ctx))
+
 }

@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/internal/testcheck"
+	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
 )
@@ -12,9 +14,8 @@ import (
 func frame(t *testing.T, route courier.Route) []byte {
 	t.Helper()
 	b, err := courier.EncodeEnvelope(courier.Envelope{Version: 1, Kind: "request", Service: "service", Method: "method", ID: "request-id", Session: "session-id", Deadline: time.Now().Add(time.Second).UnixNano(), Reply: route, Payload: []byte{0, 255, 1, 2}}, 1024)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	return b
 }
 func bounded(t *testing.T) (context.Context, context.CancelFunc) {
@@ -25,18 +26,16 @@ func TestPayloadMetadataDeliveryAndUnsubscribe(t *testing.T) {
 	ctx, cancel := bounded(t)
 	defer cancel()
 	b, _ := New(Options{})
-	defer closeTestResource(t, b)
+	defer testcheck.Close(t, b)
 	received := make(chan []byte, 1)
 	inbox, err := b.OpenInbox(ctx, "session-id", func(data []byte) { received <- data })
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeTestResource(t, inbox)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, inbox)
 	want := frame(t, inbox.Route())
 	sub, err := b.Listen(ctx, "service", func(_ context.Context, data []byte) ([]byte, error) { return data, nil })
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if err = b.Send(ctx, "service", inbox.Route(), want); err != nil {
 		t.Fatal(err)
 	}
@@ -69,9 +68,8 @@ func TestBoundedBackpressureAndBusShutdown(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	data := frame(t, courier.Route{Topic: "unused"})
 	if err = b.Send(ctx, "service", courier.Route{}, data); err != nil {
 		t.Fatal(err)
@@ -88,9 +86,8 @@ func TestBoundedBackpressureAndBusShutdown(t *testing.T) {
 			overloaded = true
 			break
 		}
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 	}
 	if !overloaded {
 		t.Fatal("queue not bounded")
@@ -110,13 +107,12 @@ func TestBusIsolationAndRapidResubscribe(t *testing.T) {
 	defer cancel()
 	a, _ := New(Options{})
 	b, _ := New(Options{})
-	defer closeTestResource(t, a)
-	defer closeTestResource(t, b)
+	defer testcheck.Close(t, a)
+	defer testcheck.Close(t, b)
 	for i := 0; i < 30; i++ {
 		sub, err := a.Listen(ctx, "service", func(context.Context, []byte) ([]byte, error) { return nil, nil })
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		if err = b.Send(ctx, "service", courier.Route{}, frame(t, courier.Route{})); !errors.Is(err, courier.ErrNoResponders) {
 			t.Fatalf("separate bus saw service: %v", err)
 		}
@@ -126,15 +122,5 @@ func TestBusIsolationAndRapidResubscribe(t *testing.T) {
 	}
 	if s := a.Stats(); s.Services != 0 {
 		t.Fatalf("leaked service: %+v", s)
-	}
-}
-
-// closeTestResource uses a fresh deadline even when the call context has expired.
-func closeTestResource(t *testing.T, resource interface{ Close(context.Context) error }) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := resource.Close(ctx); err != nil {
-		t.Errorf("resource cleanup: %v", err)
 	}
 }

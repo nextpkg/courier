@@ -11,8 +11,9 @@ import (
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
 	"github.com/nextpkg/courier/examples/internal/kafkatest"
-	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 	transport "github.com/nextpkg/courier/transport/kafka"
+	"github.com/stretchr/testify/require"
 	"io"
 	"os"
 	"os/exec"
@@ -93,13 +94,11 @@ func TestKafkaCrossProcess(t *testing.T) {
 		cmd.Env = append(os.Environ(), "KAFKA_CHILD_PREFIX="+opts.Prefix, "KAFKA_CHILD_ROLE="+role)
 		cmd.Stderr = os.Stderr
 		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		stdin, err := cmd.StdinPipe()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		if err = cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
@@ -130,10 +129,9 @@ func TestKafkaCrossProcess(t *testing.T) {
 	var orders []*demo.OrdersAsyncClient
 	for i := 0; i < 3; i++ {
 		api, conn, err := demo.DialOrders(ctx, kafkatest.NewTransport(t, opts), courier.ClientOptions{MaxInFlight: 512, DefaultTimeout: 8 * time.Second})
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { testutil.Close(t, conn) })
+		require.NoError(t, err)
+
+		t.Cleanup(func() { testcheck.Close(t, conn) })
 		clients = append(clients, conn)
 		orders = append(orders, api)
 	}

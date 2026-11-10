@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
@@ -11,9 +12,8 @@ func TestRouteFieldOrderAndOwnership(t *testing.T) {
 	r, f, _ := routerFixture(t)
 
 	old, err := wire.EncodeRoute(f)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	got := bytes.Clone(old)
 	for i := 0; i < 100; i++ {
 		other := f

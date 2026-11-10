@@ -12,6 +12,8 @@ import (
 	"github.com/nextpkg/courier/examples/handlers"
 	"github.com/nextpkg/courier/examples/internal/kafkatest"
 	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
+	"github.com/stretchr/testify/require"
 	"net"
 	"runtime"
 	"sync"
@@ -103,21 +105,19 @@ func TestKafkaResponseFailureRedeliveryAndCommit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 	f, err := demo.NewOrdersAsyncClient(c).GetAsync(ctx, "side-effect", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	select {
 	case <-failed:
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
 	close(release)
-	testutil.WaitFor(t, 5*time.Second, func() bool { return tr.Stats().ConsumerRestarts > 0 }, "response publication failure did not restart uncommitted consumption")
+	testcheck.WaitFor(t, 5*time.Second, func() bool { return tr.Stats().ConsumerRestarts > 0 }, "response publication failure did not restart uncommitted consumption")
 	topic, _ := tr.RequestTopic("Orders")
 	offset, err := brokeradmin.Committed(ctx, admin, tr.Group(topic), topic, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if offset > 0 {
 		t.Fatalf("failed response advanced offset to %d", offset)
 	}
@@ -132,7 +132,7 @@ func TestKafkaResponseFailureRedeliveryAndCommit(t *testing.T) {
 	if r.Count("Orders.Get:side-effect") < 2 {
 		t.Fatal("test did not exercise side-effect replay after failed response")
 	}
-	testutil.WaitFor(t, 3*time.Second, func() bool {
+	testcheck.WaitFor(t, 3*time.Second, func() bool {
 		n, e := brokeradmin.Committed(context.Background(), admin, tr.Group(topic), topic, 0)
 		return e == nil && n >= 1
 	}, "response-confirmed record was not committed")
@@ -154,9 +154,8 @@ func TestKafkaReplyReconnectRetainsOffset(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	f, err := api.GetAsync(ctx, "first", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if err = f.Sent(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -196,9 +195,8 @@ func TestKafkaExpiredRedeliveryDoesNotRepeatHandler(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	f, err := demo.NewOrdersAsyncClient(c).GetAsync(ctx, "expired-effect", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	select {
 	case <-cut:
 	case <-ctx.Done():
@@ -207,10 +205,10 @@ func TestKafkaExpiredRedeliveryDoesNotRepeatHandler(t *testing.T) {
 	if _, err = f.Await(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal(err)
 	}
-	testutil.WaitFor(t, 5*time.Second, func() bool { return tr.Stats().ConsumerRestarts > 0 }, "no failed-response redelivery path")
+	testcheck.WaitFor(t, 5*time.Second, func() bool { return tr.Stats().ConsumerRestarts > 0 }, "no failed-response redelivery path")
 	network.Resume()
 	topic, _ := tr.RequestTopic("Orders")
-	testutil.WaitFor(t, 12*time.Second, func() bool {
+	testcheck.WaitFor(t, 12*time.Second, func() bool {
 		n, e := brokeradmin.Committed(context.Background(), admin, tr.Group(topic), topic, 0)
 		return e == nil && n >= 1
 	}, "expired redelivery was not answered/committed")
@@ -238,9 +236,8 @@ func TestKafkaProducerBackpressure(t *testing.T) {
 	var calls []*courier.Future[*demo.Item]
 	for i := 0; i < 8; i++ {
 		f, err := api.GetAsync(context.Background(), fmt.Sprint(i), 0)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		calls = append(calls, f)
 	}
 	overloaded := 0
@@ -249,9 +246,8 @@ func TestKafkaProducerBackpressure(t *testing.T) {
 		if errors.Is(err, courier.ErrOverloaded) {
 			overloaded++
 		}
-		if err == nil {
-			t.Fatal("send succeeded through disconnected broker")
-		}
+		require.Error(t, err, "send succeeded through disconnected broker")
+
 	}
 	network.Resume()
 	if overloaded == 0 {

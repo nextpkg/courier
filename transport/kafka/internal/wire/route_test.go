@@ -3,6 +3,7 @@ package wire
 import (
 	"bytes"
 	"encoding/binary"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
@@ -10,9 +11,8 @@ func TestBinaryRouteStringLengths(t *testing.T) {
 	f := Route{Endpoint: "http://localhost:1234", Instance: "i", Session: "s", ID: "id", Topic: "r", Expires: 123}
 
 	encoded, err := EncodeRoute(f)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	for _, size := range []uint32{0xffffffff, MaxRouteBytes + 1, uint32(len(encoded))} {
 		bad := bytes.Clone(encoded)
 		// The first field is Endpoint: type byte, field ID, then string length.
@@ -27,13 +27,11 @@ func TestBinaryRouteStringsOwnBytes(t *testing.T) {
 	f := Route{Endpoint: "http://localhost:1234", Instance: "i", Session: "s", ID: "id", Topic: "r", Expires: 123}
 
 	encoded, err := EncodeRoute(f)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	decoded, err := DecodeRoute(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	clear(encoded)
 	c := getRouteCodec()
 	c.b.Write(bytes.Repeat([]byte{'x'}, MaxRouteBytes))

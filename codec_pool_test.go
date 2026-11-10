@@ -4,15 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
 func TestCodecPoolOutputOwnershipAndLimits(t *testing.T) {
 	ctx := context.Background()
 	first, err := encodeCall(ctx, "first", &unit{}, 1024)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	saved := bytes.Clone(first)
 	for i := 0; i < 100; i++ {
 		if _, err := encodeCall(ctx, "another", &unit{}, 1024); err != nil {

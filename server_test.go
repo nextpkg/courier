@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/stretchr/testify/require"
 )
 
 type verboseErrorProcessor struct{ thrift.TProcessor }
@@ -28,9 +29,8 @@ func (verboseErrorProcessor) Process(ctx context.Context, in, _ thrift.TProtocol
 func TestErrorReplyBudget(t *testing.T) {
 	const limit = 512
 	payload, err := encodeCall(context.Background(), "Ping", &unit{}, limit)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	e := Envelope{Version: ProtocolVersion, Kind: "request", Service: "S", Method: "Ping", ID: "id", Session: "session", Deadline: time.Now().Add(time.Minute).UnixNano(), Reply: Route{Topic: "replies", Partition: 0}, Payload: payload}
 	// Find the largest admissible metadata budget, including binary framing.
 	for {
@@ -44,9 +44,8 @@ func TestErrorReplyBudget(t *testing.T) {
 		e = next
 	}
 	s, err := NewServer(&fakeTransport{}, ServerOptions{MaxFrameBytes: limit})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	for _, tc := range []struct{ name, code string }{{"expired", "deadline"}, {"verbose processor error", "protocol"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			request := e

@@ -3,6 +3,7 @@ package courier
 import (
 	"context"
 	"errors"
+	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
 )
@@ -41,14 +42,12 @@ func (f *fastTestTransport) Send(context.Context, string, Route, []byte) error {
 func TestClientPreparedAndParsedPaths(t *testing.T) {
 	f := &fastTestTransport{prepared: make(chan Envelope, 1)}
 	c, err := NewClient(context.Background(), f, ClientOptions{MaxFrameBytes: 512})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	defer c.Close(context.Background())
 	call, err := c.Submit(context.Background(), "S", "Ping", &unit{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	var e Envelope
 	select {
 	case e = <-f.prepared:

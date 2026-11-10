@@ -6,6 +6,7 @@ import (
 	"github.com/nextpkg/courier"
 	"strings"
 
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"testing"
 	"time"
@@ -13,15 +14,13 @@ import (
 
 func TestUnreplyableRecordCanBeCommitted(t *testing.T) {
 	opts, err := normalize(Options{Brokers: []string{"localhost:9092"}, MaxFrameBytes: 512})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	tr := &Transport{opts: opts}
 	e := courier.Envelope{Version: 1, Kind: "request", Service: "S", Method: "Ping", ID: "id", Session: "s", Reply: structRoute(opts.ReplyTopic, 0)}
 	base, err := courier.EncodeEnvelope(e, courier.DefaultMaxFrameBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	e.Session = strings.Repeat("s", 1+opts.MaxFrameBytes-len(base))
 	raw, err := courier.EncodeEnvelope(e, courier.DefaultMaxFrameBytes)
 	if err != nil || len(raw) != opts.MaxFrameBytes {
@@ -42,14 +41,12 @@ func TestUnreplyableRecordCanBeCommitted(t *testing.T) {
 
 func TestPermanentSizeFailureDoesNotRetry(t *testing.T) {
 	opts, err := normalize(Options{Brokers: []string{"localhost:9092"}, MaxFrameBytes: 512})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	e := courier.Envelope{Version: 1, Kind: "request", Service: "S", Method: "Ping", ID: "id", Session: "s", Reply: structRoute(opts.ReplyTopic, 0)}
 	data, err := courier.EncodeEnvelope(e, opts.MaxFrameBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	for _, tc := range []struct {
 		name      string
 		out       []byte
@@ -109,9 +106,8 @@ func TestCommitPrefixNeverSkipsUnfinishedOrFailed(t *testing.T) {
 }
 func TestRoutingAndConfiguration(t *testing.T) {
 	opts, err := normalize(Options{Brokers: []string{"localhost:9092"}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	tr := &Transport{opts: opts}
 	topic, err := tr.RequestTopic("Orders")
 	if err != nil || topic != "courier.request.Orders" {

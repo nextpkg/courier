@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/internal/testcheck"
 	kafka "github.com/nextpkg/courier/transport/kafka"
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"net/url"
 	"os"
@@ -27,14 +29,7 @@ func routerOptions(o kafka.Options) kafka.Options {
 }
 func eventuallyRouter(t *testing.T, f func() bool) {
 	t.Helper()
-	until := time.Now().Add(20 * time.Second)
-	for time.Now().Before(until) {
-		if f() {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("router condition timed out")
+	testcheck.Poll(t, 20*time.Second, 20*time.Millisecond, f, "router condition timed out")
 }
 func TestKafkaRouterRoutingExpansionAndRestart(t *testing.T) {
 	for _, size := range []int{0, 32} {
@@ -77,9 +72,8 @@ func testKafkaRouterLifecycle(t *testing.T, batchSize int) {
 		e.Kind = "response"
 		return courier.EncodeEnvelope(e, courier.DefaultMaxFrameBytes)
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	defer sub.Close(context.Background())
 	peers := []*kafka.Transport{}
 	ins := []courier.Inbox{}
@@ -95,9 +89,8 @@ func testKafkaRouterLifecycle(t *testing.T, batchSize int) {
 			}
 			got <- e.ID
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		ins = append(ins, in)
 	}
 	send := func(i int, id string) {
@@ -158,9 +151,8 @@ func testKafkaRouterLifecycle(t *testing.T, batchSize int) {
 	topic.Count = 3
 	req.Topics = []kmsg.CreatePartitionsRequestTopic{topic}
 	res, err := req.RequestWith(ctx, admin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	for _, x := range res.Topics {
 		if x.ErrorCode != 0 {
 			t.Fatal(x)
@@ -185,9 +177,8 @@ func testKafkaRouterLifecycle(t *testing.T, batchSize int) {
 			send(0, fmt.Sprint("rebalance-", i))
 		}
 	}()
-	if err := peers[2].Close(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, peers[2].Close(ctx))
+
 	<-sent
 	receive(90)
 	peers[2] = kafkatest.NewTransport(t, routerOptions(opts))
@@ -199,18 +190,16 @@ func testKafkaRouterLifecycle(t *testing.T, batchSize int) {
 		t.Fatal(ctx.Err())
 	}
 	oldEndpoint := peers[0].ReplyEndpoint()
-	if err := peers[0].Close(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, peers[0].Close(ctx))
+
 	o := routerOptions(opts)
 	u, _ := url.Parse(oldEndpoint)
 	o.ReplyRouter.ListenAddress = u.Host
 	o.ReplyRouter.AdvertiseURL = oldEndpoint
 	peers[0] = kafkatest.NewTransport(t, o)
 	ins[0], err = peers[0].OpenInbox(ctx, "s0", func(b []byte) { e, _ := courier.DecodeEnvelope(b, courier.DefaultMaxFrameBytes); got <- e.ID })
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	releaseOnce.Do(func() { close(release) })
 	eventuallyRouter(t, func() bool {
 		var n uint64

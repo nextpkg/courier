@@ -7,6 +7,7 @@ import (
 	"errors"
 	"github.com/nextpkg/courier/examples/internal/kafkatest"
 	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/nextpkg/courier/examples/brokeradmin"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -26,9 +28,8 @@ func TestKafkaUnroutableRecordsAndBudgets(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	p, err := kgo.NewClient(kgo.SeedBrokers(opts.Brokers...), kgo.RecordPartitioner(kgo.ManualPartitioner()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	defer p.Close()
 	frames := [][]byte{[]byte("malformed")}
 	for _, e := range []courier.Envelope{
@@ -36,17 +37,15 @@ func TestKafkaUnroutableRecordsAndBudgets(t *testing.T) {
 		{Version: 1, Kind: "request", Service: "Orders", Method: "Get", ID: "wrong-route", Session: "test", Reply: courier.Route{Topic: "foreign-replies", Partition: 0}},
 	} {
 		data, err := courier.EncodeEnvelope(e, courier.DefaultMaxFrameBytes)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		frames = append(frames, data)
 	}
 	for _, frame := range frames {
-		if err := p.ProduceSync(ctx, &kgo.Record{Topic: topic, Partition: 0, Value: frame}).FirstErr(); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, p.ProduceSync(ctx, &kgo.Record{Topic: topic, Partition: 0, Value: frame}).FirstErr())
+
 	}
-	testutil.WaitFor(t, 5*time.Second, func() bool {
+	testcheck.WaitFor(t, 5*time.Second, func() bool {
 		n, err := brokeradmin.Committed(ctx, admin, tr.Group(topic), topic, 0)
 		return err == nil && n == 3
 	}, "poison records blocked committed progress")

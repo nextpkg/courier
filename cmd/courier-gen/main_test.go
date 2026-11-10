@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"github.com/stretchr/testify/require"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,9 +13,8 @@ import (
 
 func TestGeneratedParameterNamesCompile(t *testing.T) {
 	src, err := os.ReadFile("../../examples/gen/shapes/shapes.go")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	for _, name := range []string{"f", "err", "zero", "_courierClient"} {
 		t.Run(name, func(t *testing.T) {
 			// Rename parameters in the pinned official fixture for both void and
@@ -75,9 +75,8 @@ func TestOfficialGeneratedFixtures(t *testing.T) {
 }
 func TestUnsupportedCompilerAndServiceShapes(t *testing.T) {
 	src, err := os.ReadFile("../../examples/gen/demo/demo.go")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	for _, tc := range []struct {
 		name    string
 		data    []byte

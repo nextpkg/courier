@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nextpkg/courier"
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -112,9 +113,8 @@ func (d *loadDiagnostics) report(t *testing.T, name string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	b, err := json.Marshal(map[string]any{"role": name, "elapsed_seconds": time.Since(d.started).Seconds(), "stages": d.stages, "batches": d.batches, "batch_records": d.batchRecords, "pending_produce": len(d.produced), "pending_fetch": len(d.fetched)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	t.Log("KAFKA_DIAGNOSTICS " + string(b))
 }
 

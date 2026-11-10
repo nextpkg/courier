@@ -3,7 +3,7 @@ package examples_test
 import (
 	"context"
 	"errors"
-	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 	"testing"
 	"time"
 
@@ -11,40 +11,36 @@ import (
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
 	"github.com/nextpkg/courier/transport/memory"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGeneratedRPCEntryPoints(t *testing.T) {
 	bus, err := memory.New(memory.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer testutil.Close(t, bus)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, bus)
 	ctx := context.Background()
 	server, err := demo.ListenOrders(ctx, bus, &handlers.Orders{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer testutil.Close(t, server)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, server)
 	api, conn, err := demo.DialOrders(ctx, bus, courier.ClientOptions{DefaultTimeout: 100 * time.Millisecond})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer testutil.Close(t, conn)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, conn)
 	result, err := api.Get(ctx, "ordinary-rpc", 0)
 	if err != nil || result == nil || result.ID != "ordinary-rpc" {
 		t.Fatalf("sync result: %v, %v", result, err)
 	}
-	if err := api.Ping(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, api.Ping(ctx))
+
 	var rejected *demo.Rejected
 	if _, err := api.Get(ctx, "reject", 0); !errors.As(err, &rejected) {
 		t.Fatalf("business exception: %v", err)
 	}
 	future, err := api.GetAsync(ctx, "async-rpc", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	result, err = future.Await(ctx)
 	if err != nil || result.ID != "async-rpc" {
 		t.Fatalf("async result: %v, %v", result, err)
@@ -55,21 +51,20 @@ func TestGeneratedRPCEntryPoints(t *testing.T) {
 	if conn.Pending() != 0 {
 		t.Fatal("pending calls remain")
 	}
-	testutil.Close(t, conn)
+	testcheck.Close(t, conn)
 	if _, err = api.Get(ctx, "closed", 0); !errors.Is(err, courier.ErrClosed) {
 		t.Fatalf("closed connection: %v", err)
 	}
 	// Closing the dedicated connection must not close the caller-owned bus.
 	next, nextConn, err := demo.DialOrders(ctx, bus)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer testutil.Close(t, nextConn)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, nextConn)
 	if _, err = next.Get(ctx, "reconnected", 0); err != nil {
 		t.Fatal(err)
 	}
-	testutil.Close(t, nextConn)
-	testutil.Close(t, server)
+	testcheck.Close(t, nextConn)
+	testcheck.Close(t, server)
 	if stats := bus.Stats(); stats.Services != 0 || stats.Inboxes != 0 {
 		t.Fatalf("resource leak: %+v", stats)
 	}
@@ -77,10 +72,9 @@ func TestGeneratedRPCEntryPoints(t *testing.T) {
 
 func TestGeneratedRPCEntryPointFailures(t *testing.T) {
 	bus, err := memory.New(memory.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer testutil.Close(t, bus)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, bus)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if api, conn, err := demo.DialOrders(ctx, bus); err == nil || api != nil || conn != nil {
@@ -104,7 +98,7 @@ func TestGeneratedRPCEntryPointFailures(t *testing.T) {
 	if stats := bus.Stats(); stats.Services != 0 || stats.Inboxes != 0 {
 		t.Fatalf("failed startup leaked resources: %+v", stats)
 	}
-	testutil.Close(t, bus)
+	testcheck.Close(t, bus)
 	if _, err := demo.ListenOrders(context.Background(), bus, &handlers.Orders{}); err == nil {
 		t.Fatal("closed transport listen succeeded")
 	}

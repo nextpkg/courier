@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 	"testing"
 	"time"
 
@@ -74,7 +75,7 @@ func TestNATSDrainClose(t *testing.T) {
 				}
 				// Canceled handlers and discarded queued requests need not all receive replies.
 				// Closing the client must terminate every remaining waiter.
-				testutil.Close(t, c)
+				testcheck.Close(t, c)
 				if c.Pending() != 0 {
 					t.Fatal("pending after bounded shutdown")
 				}

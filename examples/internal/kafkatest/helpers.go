@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/nextpkg/courier/examples/brokeradmin"
 	transport "github.com/nextpkg/courier/transport/kafka"
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"os"
 	"strings"
@@ -26,9 +27,8 @@ func Brokers(t *testing.T) []string {
 func Admin(t *testing.T) *kgo.Client {
 	t.Helper()
 	c, err := kgo.NewClient(kgo.SeedBrokers(Brokers(t)...))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	t.Cleanup(c.Close)
 	return c
 }
@@ -38,9 +38,8 @@ func Provision(t *testing.T, c *kgo.Client, prefix string, n int32) transport.Op
 	topics := map[string]int32{prefix + ".request.Orders": n, prefix + ".request.Inventory": n, prefix + ".replies": 1}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if err := brokeradmin.Create(ctx, c, topics); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, brokeradmin.Create(ctx, c, topics))
+
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -60,9 +59,8 @@ func NewTransport(t *testing.T, o transport.Options) *transport.Transport {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	tr, err := transport.New(ctx, o)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

@@ -5,6 +5,7 @@ import (
 	"context"
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"strings"
 	"testing"
@@ -14,9 +15,8 @@ func TestCompactReplyValidationAndDedupOwnership(t *testing.T) {
 	r, f, b := routerFixture(t)
 	calls := 0
 	inbox, err := r.openInbox(context.Background(), f.Session, func(data []byte) { calls++; clear(data) })
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	defer inbox.Close(context.Background())
 	for i := 0; i < 2; i++ {
 		m := wire.ReceivedBatchMessage{Instance: []byte(f.Instance), Expires: f.Expires, Data: bytes.Clone(b)}
@@ -39,18 +39,16 @@ func TestCompactReplyValidationAndDedupOwnership(t *testing.T) {
 	invalid, _ := courier.DecodeEnvelope(b, courier.DefaultMaxFrameBytes)
 	invalid.ID = strings.Repeat("x", wire.MaxRouteBytes)
 	oversized, err := courier.EncodeEnvelope(invalid, courier.DefaultMaxFrameBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if r.deliverCompact(wire.ReceivedBatchMessage{Instance: []byte(f.Instance), Expires: f.Expires, Data: oversized}) != 400 {
 		t.Fatal("oversized routing metadata accepted")
 	}
 	invalid.ID = f.ID
 	invalid.Reply.Partition = -1
 	raw, err := courier.EncodeEnvelope(invalid, courier.DefaultMaxFrameBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if r.deliverCompact(wire.ReceivedBatchMessage{Instance: []byte(f.Instance), Expires: f.Expires, Data: raw}) != 400 {
 		t.Fatal("invalid partition accepted")
 	}
@@ -60,9 +58,8 @@ func TestCompactForwardRejectsMismatchedKafkaRoute(t *testing.T) {
 	r, f, b := routerFixture(t)
 	f.ID = "different-request"
 	header, err := wire.EncodeRoute(f)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	err = r.forward(context.Background(), &kgo.Record{Topic: f.Topic, Partition: f.Partition, Headers: []kgo.RecordHeader{{Key: routeHeader, Value: header}}, Value: b})
 	if err != nil || r.t.discarded.Load() != 1 {
 		t.Fatalf("mismatch not discarded: %v", err)

@@ -2,6 +2,7 @@ package courier
 
 import (
 	"errors"
+	"github.com/stretchr/testify/require"
 	"math"
 	"strings"
 	"testing"
@@ -16,9 +17,8 @@ func TestErrorBudgetFastPathMatchesExactBoundary(t *testing.T) {
 		expected.Deadline = 0
 		expected.Error = &RPCError{Code: "method_not_found", Message: strings.Repeat("x", 64)}
 		b, err := EncodeEnvelope(expected, DefaultMaxFrameBytes)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		for _, limit := range []int{-1, 0, 511, 512, len(b) - 1, len(b), len(b) + 1, DefaultMaxFrameBytes} {
 			err := checkErrorReplyBudget(e, limit)
 			if errors.Is(err, ErrTooLarge) != (len(b) > limit) {

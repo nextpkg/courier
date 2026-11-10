@@ -11,7 +11,9 @@ import (
 	"github.com/nextpkg/courier/examples/handlers"
 	"github.com/nextpkg/courier/examples/internal/kafkatest"
 	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 	transport "github.com/nextpkg/courier/transport/kafka"
+	"github.com/stretchr/testify/require"
 	"runtime"
 	"sort"
 	"sync"
@@ -58,7 +60,7 @@ func TestKafkaSharedReplyReadAmplification(t *testing.T) {
 			}
 			completed.Wait()
 			elapsed := time.Since(begin)
-			testutil.WaitFor(t, 3*time.Second, func() bool {
+			testcheck.WaitFor(t, 3*time.Second, func() bool {
 				for _, tr := range ts {
 					if tr.Stats().ReplyRecords < count {
 						return false
@@ -90,13 +92,11 @@ func TestKafkaRepeatedLifecycle(t *testing.T) {
 	baseline := runtime.NumGoroutine()
 	for i := 0; i < 12; i++ {
 		tr, err := transport.New(context.Background(), opts)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		c, err := courier.NewClient(context.Background(), tr, courier.ClientOptions{})
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		if _, err = demo.NewOrdersAsyncClient(c).Get(context.Background(), "lifecycle", 0); err != nil {
 			t.Fatal(err)
 		}
@@ -112,5 +112,5 @@ func TestKafkaRepeatedLifecycle(t *testing.T) {
 			t.Fatal("retained Kafka resources")
 		}
 	}
-	testutil.AssertGoroutinesReturn(t, baseline)
+	testcheck.AssertGoroutinesReturn(t, baseline)
 }

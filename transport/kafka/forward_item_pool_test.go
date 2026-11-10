@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
+	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"
 )
@@ -13,13 +14,9 @@ func TestForwardItemPoolCancellationIsolation(t *testing.T) {
 	first := pool.acquire(ctx, wire.BatchMessage{Instance: "first", Expires: 1, Data: []byte("first data")})
 	cancel()
 	first.release()
-	if len(pool.idle) != 0 {
-		t.Fatal("queued item reused before sender finished")
-	}
+	require.Empty(t, pool.idle, "queued item reused before sender finished")
 	second := pool.acquire(context.Background(), wire.BatchMessage{Instance: "second", Expires: 2, Data: []byte("second data")})
-	if first == second {
-		t.Fatal("pending sender lost ownership")
-	}
+	require.NotSame(t, first, second, "pending sender lost ownership")
 	if string(first.message.Data) != "first data" || first.ctx.Err() == nil {
 		t.Fatal("pending data or cancellation lost")
 	}
@@ -38,9 +35,7 @@ func TestForwardItemPoolCancellationIsolation(t *testing.T) {
 	}
 	second.release()
 	reused := pool.acquire(context.Background(), wire.BatchMessage{Instance: "third", Data: []byte("third data")})
-	if reused != first {
-		t.Fatal("expected first released item")
-	}
+	require.Same(t, first, reused, "expected first released item")
 	select {
 	case got := <-reused.done:
 		t.Fatalf("stale completion %d", got)

@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"errors"
+	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"
 )
@@ -25,9 +26,8 @@ func TestPublishCompletionLateCallbackIsolation(t *testing.T) {
 	default:
 	}
 	second.complete(nil, nil)
-	if err := <-second.ready; err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, <-second.ready)
+
 	second.release()
 	reused := pool.acquire()
 	if reused != first {
@@ -53,9 +53,8 @@ func TestPublishCompletionCallbackBeforeWaiter(t *testing.T) {
 	if len(pool.idle) != 0 {
 		t.Fatal("callback recycled slot while waiter owns it")
 	}
-	if err := <-c.ready; err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, <-c.ready)
+
 	c.release()
 	if len(pool.idle) != 1 {
 		t.Fatal("completed slot not reusable")

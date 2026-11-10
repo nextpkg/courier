@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"net/http"
 	"net/http/httptest"
@@ -19,26 +20,23 @@ import (
 func routerFixture(t *testing.T) (*replyRouter, wire.Route, []byte) {
 	t.Helper()
 	opts, err := normalize(Options{Brokers: []string{"localhost:9092"}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	ctx := context.Background()
 	tr := &Transport{opts: opts, ctx: ctx, subs: map[*subscription]bool{}}
 	r := &replyRouter{t: tr, opts: ReplyRouterOptions{AllowInsecureHTTP: true, MaxReplyAge: time.Second, DedupEntries: 16}, instance: "new", endpoint: "http://127.0.0.1:1", sessions: map[string]*routedInbox{}, stale: map[string]int64{}}
 	f := wire.Route{Endpoint: r.endpoint, Instance: "new", Session: "s", ID: "id", Topic: opts.ReplyTopic, Expires: time.Now().Add(time.Second).UnixNano()}
 	b, err := courier.EncodeEnvelope(courier.Envelope{Version: 1, Kind: "response", Service: "S", Method: "M", ID: "id", Session: "s", Reply: courier.Route{Topic: opts.ReplyTopic}}, courier.DefaultMaxFrameBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	return r, f, b
 }
 func TestRouterIdentityDedupAndClose(t *testing.T) {
 	r, f, b := routerFixture(t)
 	count := 0
 	in, err := r.openInbox(context.Background(), "s", func([]byte) { count++ })
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
@@ -58,9 +56,8 @@ func TestRouterIdentityDedupAndClose(t *testing.T) {
 	if r.deliver(old, b) != 409 {
 		t.Fatal("stale process accepted")
 	}
-	if err := in.Close(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, in.Close(context.Background()))
+
 	if r.deliver(f, b) != 410 {
 		t.Fatal("closed inbox accepted")
 	}
@@ -70,9 +67,8 @@ func TestRouterValidationAndExpiry(t *testing.T) {
 	e, _ := courier.DecodeEnvelope(b, courier.DefaultMaxFrameBytes)
 	h, _ := r.routeHeader(e)
 	parsed, err := r.decodeRoute(h.Value)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	parsed.Endpoint = "http://127.0.0.1:9999/path"
 	invalid, _ := wire.EncodeRoute(parsed)
 	if _, err := r.decodeRoute(invalid); err == nil {
@@ -86,9 +82,8 @@ func TestRouterValidationAndExpiry(t *testing.T) {
 	r.client = srv.Client()
 	raw, _ := wire.EncodeRoute(f)
 	record := &kgo.Record{Topic: f.Topic, Value: b, Headers: []kgo.RecordHeader{{Key: routeHeader, Value: raw}}}
-	if err := r.forward(context.Background(), record); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, r.forward(context.Background(), record))
+
 	if attempts.Load() == 0 || r.expired.Load() != 1 {
 		t.Fatal("expiry did not terminate unreachable target")
 	}
@@ -97,9 +92,9 @@ func TestRouterValidationAndExpiry(t *testing.T) {
 	f.Expires = time.Now().Add(time.Second).UnixNano()
 	raw, _ = wire.EncodeRoute(f)
 	record.Headers[0].Value = raw
-	if err := r.forward(ctx, record); err == nil {
-		t.Fatal("shutdown must not acknowledge unfinished reply")
-	}
+	require.Error(t, r.forward(ctx, record),
+		"shutdown must not acknowledge unfinished reply")
+
 }
 
 func TestRouterRejectsMissingRouteHTTP(t *testing.T) {

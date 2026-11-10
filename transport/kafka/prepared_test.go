@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nextpkg/courier"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPreparedRequestOwnsFrameAndEnforcesLimits(t *testing.T) {
@@ -21,9 +22,8 @@ func TestPreparedRequestOwnsFrameAndEnforcesLimits(t *testing.T) {
 	}
 	e := courier.Envelope{Version: 1, Kind: "request", Service: "S", Method: "M", ID: "id", Session: "s", Reply: courier.Route{Topic: tr.opts.ReplyTopic}, Payload: []byte("owned"), Deadline: time.Now().Add(time.Second).UnixNano()}
 	ready, err := tr.PrepareRequest(context.Background(), e, 512)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	e.Payload[0] = 'X'
 	got, err := courier.DecodeEnvelope(ready.(*preparedRequest).value, 512)
 	if err != nil || string(got.Payload) != "owned" || got.Reply.Partition != int32(hash(e.ID)%3) {
@@ -52,9 +52,8 @@ func TestRouterParsedInboxStillValidatesWire(t *testing.T) {
 			t.Error("wrong decoded response")
 		}
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	defer inbox.Close(context.Background())
 	if r.deliver(f, []byte("invalid")) != 400 || calls != 0 {
 		t.Fatal("malformed wire accepted")

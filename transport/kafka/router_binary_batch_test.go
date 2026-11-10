@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
+	"github.com/stretchr/testify/require"
 	"net"
 	"reflect"
 	"testing"
@@ -39,9 +40,8 @@ func TestBinaryBatchWireUnsignedPartialReplay(t *testing.T) {
 		want int
 	}{{wire.EncodeBatch(msgs), 200}, {append(wire.EncodeBatch(msgs), 1), 400}} {
 		result, err := peer.forward(context.Background(), ln.Addr().String(), "ForwardBatch", nil, tc.body, r.batchLimit())
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		if result.status != tc.want {
 			t.Fatal(result.status)
 		}
@@ -49,9 +49,8 @@ func TestBinaryBatchWireUnsignedPartialReplay(t *testing.T) {
 	if calls != 1 {
 		t.Fatal("invalid batch delivered")
 	}
-	if err := in.Close(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, in.Close(context.Background()))
+
 	if got := r.sendBatch(endpoint, msgs[:1]); !reflect.DeepEqual(got, []int{410}) {
 		t.Fatal(got)
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
+	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,9 +14,8 @@ func TestBinaryRouteValidation(t *testing.T) {
 	r, f, _ := routerFixture(t)
 	{
 		b, err := wire.EncodeRoute(f)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		got, err := r.decodeRoute(b)
 		if err != nil || got != f {
 			t.Fatalf("roundtrip: %+v %v", got, err)
@@ -43,9 +43,8 @@ func TestBinaryRouteHTTPHeader(t *testing.T) {
 	r.inbound = make(chan struct{}, 1)
 
 	hdr, err := wire.EncodeRoute(f)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	req := httptest.NewRequest("POST", "/courier/reply", bytes.NewReader(b))
 	req.Header.Set("X-Courier-Route", "base64:"+base64.StdEncoding.EncodeToString(hdr))
 	w := httptest.NewRecorder()

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/nextpkg/courier/examples/internal/kafkatest"
 	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 	"reflect"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/nextpkg/courier/examples/brokeradmin"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -26,9 +28,8 @@ func TestKafkaMethodEvolutionAndFixedTopicCount(t *testing.T) {
 	p := demo.NewOrdersProcessor(&handlers.Orders{})
 	delete(p.ProcessorMap(), "Ping")
 	_ = old.Register("Orders", p)
-	if err := old.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, old.Start(context.Background()))
+
 	t.Cleanup(func() { _ = old.Close(context.Background()) })
 	c := testutil.Client(t, kafkatest.NewTransport(t, opts))
 	api := demo.NewOrdersAsyncClient(c)
@@ -39,9 +40,8 @@ func TestKafkaMethodEvolutionAndFixedTopicCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, err := brokeradmin.Names(context.Background(), admin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if err = old.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -51,9 +51,8 @@ func TestKafkaMethodEvolutionAndFixedTopicCount(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		next := testutil.Client(t, kafkatest.NewTransport(t, opts))
 		a := demo.NewOrdersAsyncClient(next)
-		if err := a.Ping(context.Background()); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, a.Ping(context.Background()))
+
 		for j := 0; j < 5; j++ {
 			if _, err := a.Get(context.Background(), fmt.Sprint(i, j), 0); err != nil {
 				t.Fatal(err)
@@ -63,13 +62,11 @@ func TestKafkaMethodEvolutionAndFixedTopicCount(t *testing.T) {
 	timeout, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
 	defer cancel()
 	_, err = demo.NewOrdersAsyncClientFor(c, "Unprovisioned").Get(timeout, "missing", 0)
-	if err == nil {
-		t.Fatal("missing topic call succeeded")
-	}
+	require.Error(t, err, "missing topic call succeeded")
+
 	after, err := brokeradmin.Names(context.Background(), admin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if !reflect.DeepEqual(before, after) {
 		t.Fatalf("topics changed with methods/replicas/clients/calls: before=%v after=%v", before, after)
 	}
@@ -84,26 +81,23 @@ func TestKafkaCommitOrderAndRebalance(t *testing.T) {
 	c := testutil.Client(t, kafkatest.NewTransport(t, opts))
 	api := demo.NewOrdersAsyncClient(c)
 	first, err := api.GetAsync(context.Background(), "first", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	select {
 	case <-h.Started:
 	case <-time.After(5 * time.Second):
 		t.Fatal("slow handler not entered")
 	}
 	second, err := api.GetAsync(context.Background(), "second", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if _, err = second.Await(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	topic, _ := a.RequestTopic("Orders")
 	offset, err := brokeradmin.Committed(context.Background(), admin, a.Group(topic), topic, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if offset > 0 {
 		t.Fatalf("committed %d past unfinished first record", offset)
 	}
@@ -125,7 +119,7 @@ func TestKafkaCommitOrderAndRebalance(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("rebalance did not complete")
 	}
-	testutil.WaitFor(t, 3*time.Second, func() bool {
+	testcheck.WaitFor(t, 3*time.Second, func() bool {
 		n, e := brokeradmin.Committed(context.Background(), admin, a.Group(topic), topic, 0)
 		return e == nil && n >= 2
 	}, "contiguous completed offsets were not committed")
@@ -155,17 +149,16 @@ func TestKafkaSharedTopicRequiresCompleteHandlers(t *testing.T) {
 	tr := kafkatest.NewTransport(t, opts)
 	incomplete, _ := courier.NewServer(tr, courier.ServerOptions{})
 	_ = demo.RegisterOrders(incomplete, &handlers.Orders{})
-	if err := incomplete.Start(context.Background()); err == nil {
-		t.Fatal("partial shared-topic consumer accepted")
-	}
+	require.Error(t, incomplete.Start(context.Background()),
+		"partial shared-topic consumer accepted")
+
 	_ = incomplete.Close(context.Background())
 	for i := 0; i < 2; i++ {
 		s, _ := courier.NewServer(tr, courier.ServerOptions{})
 		_ = demo.RegisterOrders(s, &handlers.Orders{})
 		_ = demo.RegisterInventory(s, &handlers.Inventory{})
-		if err := s.Start(context.Background()); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, s.Start(context.Background()))
+
 		t.Cleanup(func() { _ = s.Close(context.Background()) })
 	}
 	c := testutil.Client(t, kafkatest.NewTransport(t, opts))
@@ -188,9 +181,8 @@ func TestKafkaReplyExpansionKeepsInflightRoute(t *testing.T) {
 	original := kafkatest.NewTransport(t, opts)
 	c := testutil.Client(t, original)
 	future, err := demo.NewOrdersAsyncClient(c).GetAsync(context.Background(), "first", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	select {
 	case <-h.Started:
 	case <-time.After(3 * time.Second):
@@ -229,26 +221,23 @@ func TestKafkaReplyReaderReadyAndSessionIsolation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	p, err := kgo.NewClient(kgo.SeedBrokers(opts.Brokers...), kgo.RecordPartitioner(kgo.ManualPartitioner()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	defer p.Close()
 	// A concrete end offset must skip even a historical frame with the same
 	// session value. Session filtering alone would not prove start positioning.
 	history := courier.Envelope{Version: 1, Kind: "response", Service: "Orders", Method: "Get", ID: "historical", Session: "new-session", Reply: courier.Route{Topic: opts.ReplyTopic, Partition: 0}}
 	data, err := courier.EncodeEnvelope(history, courier.DefaultMaxFrameBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if err = p.ProduceSync(ctx, &kgo.Record{Topic: opts.ReplyTopic, Partition: 0, Value: data}).FirstErr(); err != nil {
 		t.Fatal(err)
 	}
 	got := make(chan string, 4)
 	inbox, err := tr.OpenInbox(ctx, "new-session", func(data []byte) { e, _ := courier.DecodeEnvelope(data, courier.DefaultMaxFrameBytes); got <- e.ID })
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer testutil.Close(t, inbox)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, inbox)
 	for _, session := range []string{"old-session", "new-session"} {
 		e := courier.Envelope{Version: 1, Kind: "response", Service: "Orders", Method: "Get", ID: session, Session: session, Reply: inbox.Route()}
 		data, _ := courier.EncodeEnvelope(e, courier.DefaultMaxFrameBytes)

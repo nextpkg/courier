@@ -11,6 +11,7 @@ import (
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
 	transport "github.com/nextpkg/courier/transport/nats"
+	"github.com/stretchr/testify/require"
 	"net"
 	"os"
 	"os/exec"
@@ -26,9 +27,8 @@ func TestNATSDisconnectReconnect(t *testing.T) {
 		t.Fatal("integration requires NATS_SERVER executable for restart testing")
 	}
 	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	port := l.Addr().(*net.TCPAddr).Port
 	_ = l.Close()
 	url := "nats://127.0.0.1:" + strconv.Itoa(port)
@@ -89,17 +89,15 @@ func TestNATSDisconnectReconnect(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close(context.Background()) })
 	c, err := courier.NewClient(context.Background(), clientTr, courier.ClientOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	t.Cleanup(func() { _ = c.Close(context.Background()) })
 	api := demo.NewOrdersAsyncClient(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
 	pending, err := api.GetAsync(ctx, "interrupted", 500)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	select {
 	case <-r.Started:
 	case <-ctx.Done():
@@ -136,9 +134,8 @@ func TestNATSDisconnectReconnect(t *testing.T) {
 	}
 	// A permanent native connection close must end reply delivery immediately.
 	future, err := api.GetAsync(context.Background(), "closing", 500)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if err = future.Sent(context.Background()); err != nil {
 		t.Fatal(err)
 	}

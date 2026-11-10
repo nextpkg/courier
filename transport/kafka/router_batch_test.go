@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
+	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -75,9 +76,8 @@ func TestBatchPerItemResultsAndReplay(t *testing.T) {
 	r.inbound = make(chan struct{}, 1)
 	calls := 0
 	in, err := r.openInbox(context.Background(), route.Session, func([]byte) { calls++ })
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	defer in.Close(context.Background())
 	srv := httptest.NewServer(http.HandlerFunc(r.serve))
 	defer srv.Close()
@@ -93,9 +93,8 @@ func TestBatchPerItemResultsAndReplay(t *testing.T) {
 		t.Fatalf("calls=%d duplicates=%d", calls, r.duplicate.Load())
 	}
 	invalid, err := courier.DecodeEnvelope(body, courier.DefaultMaxFrameBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	invalid.Reply.Topic = "wrong"
 	bad, _ := courier.EncodeEnvelope(invalid, courier.DefaultMaxFrameBytes)
 	statuses := r.sendBatch(srv.URL, []wire.BatchMessage{{Instance: route.Instance, Expires: route.Expires, Data: bad}})

@@ -8,7 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/nextpkg/courier/examples/internal/kafkatest"
-	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 	kafka "github.com/nextpkg/courier/transport/kafka"
 	"os"
 	"runtime"
@@ -24,6 +24,7 @@ import (
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/stretchr/testify/require"
 )
 
 var loadSharedClient = flag.Bool("kafka-load-shared-client", false, "share one transport across load clients")
@@ -119,10 +120,9 @@ func runLoadCurve(t *testing.T) {
 	}
 	serverTransport := newTransport(true)
 	server, err := demo.ListenOrders(context.Background(), serverTransport, &handlers.Orders{}, courier.ServerOptions{MaxConcurrent: *loadCoreConcurrency})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { testutil.Close(t, server) })
+	require.NoError(t, err)
+
+	t.Cleanup(func() { testcheck.Close(t, server) })
 	if *loadMixed {
 		for _, service := range []string{"Orders", "Inventory", "Inventory"} {
 			tr := newTransport(true)
@@ -132,10 +132,9 @@ func runLoadCurve(t *testing.T) {
 			} else {
 				replica, err = demo.ListenInventory(context.Background(), tr, &loadInventory{}, courier.ServerOptions{MaxConcurrent: *loadCoreConcurrency})
 			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { testutil.Close(t, replica) })
+			require.NoError(t, err)
+
+			t.Cleanup(func() { testcheck.Close(t, replica) })
 		}
 	}
 	var requestSequence atomic.Uint64
@@ -151,10 +150,9 @@ func runLoadCurve(t *testing.T) {
 			tr = newTransport(false)
 		}
 		c, err := courier.NewClient(context.Background(), tr, courier.ClientOptions{MaxInFlight: *loadMaxInFlight, DefaultTimeout: 8 * time.Second, PublishWorkers: *loadPublishWorkers})
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { testutil.Close(t, c) })
+		require.NoError(t, err)
+
+		t.Cleanup(func() { testcheck.Close(t, c) })
 		clients = append(clients, c)
 		if _, err := demo.NewOrdersAsyncClient(c).Get(context.Background(), "warmup", 0); err != nil {
 			t.Fatal(err)
@@ -179,23 +177,20 @@ func runLoadCurve(t *testing.T) {
 			if *loadResourceMetrics {
 				var err error
 				resourcesBefore, _, err = loadResources()
-				if err != nil {
-					t.Fatal(err)
-				}
+				require.NoError(t, err)
+
 			}
 			profiling := os.Getenv("COURIER_PROFILE") == "1"
 			var pf *os.File
 			var err error
 			if profiling {
 				pf, err = os.Create("/bench/" + os.Getenv("REPLY_MODE") + ".cpu")
-				if err != nil {
-					t.Fatal(err)
-				}
+				require.NoError(t, err)
+
 				runtime.SetBlockProfileRate(0)
 				runtime.SetMutexProfileFraction(0)
-				if err := pprof.StartCPUProfile(pf); err != nil {
-					t.Fatal(err)
-				}
+				require.NoError(t, pprof.StartCPUProfile(pf))
+
 			}
 			start := time.Now()
 			until := start.Add(*loadDuration)
@@ -265,9 +260,8 @@ func runLoadCurve(t *testing.T) {
 				pf.Close()
 				for _, name := range []string{"allocs", "block", "mutex"} {
 					f, err := os.Create("/bench/" + os.Getenv("REPLY_MODE") + "." + name)
-					if err != nil {
-						t.Fatal(err)
-					}
+					require.NoError(t, err)
+
 					pprof.Lookup(name).WriteTo(f, 0)
 					f.Close()
 				}
@@ -287,9 +281,8 @@ func runLoadCurve(t *testing.T) {
 			}
 			if *loadResourceMetrics {
 				after, quota, err := loadResources()
-				if err != nil {
-					t.Fatal(err)
-				}
+				require.NoError(t, err)
+
 				metrics["cpu_cores"] = float64(after["usage_usec"]-resourcesBefore["usage_usec"]) / 1e6 / elapsed
 				metrics["cpu_quota_cores"] = quota
 				metrics["cpu_quota_utilization"] = metrics["cpu_cores"].(float64) / quota
@@ -312,9 +305,8 @@ func runLoadCurve(t *testing.T) {
 			metrics["reply_workers"] = *loadReplyWorkers
 			metrics["forward_batches"] = *loadForwardBatches
 			data, err := json.Marshal(metrics)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
+
 			t.Log("KAFKA_LOAD " + string(data))
 			if failures != 0 {
 				t.Errorf("%d calls failed or returned mismatched results", failures)

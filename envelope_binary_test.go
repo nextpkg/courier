@@ -3,6 +3,7 @@ package courier
 import (
 	"bytes"
 	"errors"
+	"github.com/stretchr/testify/require"
 	"reflect"
 	"testing"
 )
@@ -12,13 +13,11 @@ func TestBinaryEnvelopeRoundTrip(t *testing.T) {
 		for _, rpcerr := range []*RPCError{nil, {}, {Code: "deadline", Message: "中文\n\"error"}} {
 			e := Envelope{Version: 1, Kind: kind, Service: "S", Method: "M", ID: "id", Session: "s", Reply: Route{Topic: "reply", Partition: 2}, Deadline: 1234, Payload: []byte{0, 255, 1, 2}, Error: rpcerr}
 			b, err := EncodeEnvelope(e, 4096)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
+
 			got, err := DecodeEnvelope(b, 4096)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
+
 			expected := e
 			if !reflect.DeepEqual(got, expected) {
 				t.Fatalf("roundtrip: %+v", got)
@@ -48,9 +47,8 @@ func TestBinaryEnvelopeRoundTrip(t *testing.T) {
 func TestBinaryEnvelopeRejectsBadFields(t *testing.T) {
 	e := Envelope{Version: 1, Kind: "response", Service: "S", Method: "M", ID: "id", Session: "s", Reply: Route{Topic: "r"}}
 	b, err := EncodeEnvelope(e, 512)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	wrongType := bytes.Clone(b)
 	wrongType[4] = 11
 	if _, err := DecodeEnvelope(wrongType, 512); err == nil {
@@ -63,9 +61,8 @@ func TestBinaryEnvelopeRejectsBadFields(t *testing.T) {
 	}
 	e.Version = 99
 	b, err = EncodeEnvelope(e, 512)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if _, err := DecodeEnvelope(b, 512); err == nil {
 		t.Fatal("unknown protocol version accepted")
 	}

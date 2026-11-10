@@ -3,6 +3,7 @@ package courier
 import (
 	"bytes"
 	"encoding/binary"
+	"github.com/stretchr/testify/require"
 	"reflect"
 	"testing"
 )
@@ -67,14 +68,12 @@ func TestReplyViewValidationAndOwnership(t *testing.T) {
 		checkReplyView(t, withoutPayload)
 	}
 	emptyPayload, err := EncodeEnvelope(Envelope{Version: 1, Kind: "response", Service: "S", Method: "M", ID: "id", Session: "s", Reply: Route{Topic: "r"}}, 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	checkReplyView(t, emptyPayload)
 	request, err := EncodeEnvelope(Envelope{Version: 1, Kind: "request", Service: "S", Method: "M", ID: "id", Session: "s", Reply: Route{Topic: "r"}}, 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	checkReplyView(t, request)
 }
 

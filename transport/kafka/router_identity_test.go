@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	codec "github.com/nextpkg/courier/transport/kafka/internal/wire"
+	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"
 )
@@ -15,9 +16,8 @@ func TestRouteIdentityOwnershipAndBound(t *testing.T) {
 		want.ID = fmt.Sprint(i)
 		want.Expires += int64(i)
 		wire, err := codec.EncodeRoute(want)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		got, err := r.decodeRoute(wire)
 		if err != nil || got != want {
 			t.Fatalf("roundtrip: %+v %v", got, err)

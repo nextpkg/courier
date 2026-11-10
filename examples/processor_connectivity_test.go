@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/nextpkg/courier/examples/gen/demo"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
@@ -27,15 +28,10 @@ func TestCourierProcessorPreservesContextAndThriftSetting(t *testing.T) {
 	input, output := thrift.NewTMemoryBuffer(), thrift.NewTMemoryBuffer()
 	ip, op := thrift.NewTBinaryProtocolTransport(input), thrift.NewTBinaryProtocolTransport(output)
 	args := demo.OrdersGetArgs{ID: "owned-context"}
-	if err := ip.WriteMessageBegin(ctx, "Get", thrift.CALL, 7); err != nil {
-		t.Fatal(err)
-	}
-	if err := args.Write(ctx, ip); err != nil {
-		t.Fatal(err)
-	}
-	if err := ip.WriteMessageEnd(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, ip.WriteMessageBegin(ctx, "Get", thrift.CALL, 7))
+	require.NoError(t, args.Write(ctx, ip))
+	require.NoError(t, ip.WriteMessageEnd(ctx))
+
 	h := &contextOrders{}
 	if ok, err := demo.NewOrdersCourierProcessor(h).Process(ctx, ip, op); err != nil || !ok {
 		t.Fatalf("process: %v %v", ok, err)
@@ -48,9 +44,8 @@ func TestCourierProcessorPreservesContextAndThriftSetting(t *testing.T) {
 		t.Fatalf("reply header: %s %d %d %v", name, kind, seq, err)
 	}
 	result := demo.OrdersGetResult{}
-	if err := result.Read(ctx, op); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, result.Read(ctx, op))
+
 	if result.Success == nil || result.Success.ID != "owned-context" {
 		t.Fatalf("reply: %+v", result)
 	}

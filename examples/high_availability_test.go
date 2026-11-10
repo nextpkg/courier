@@ -10,6 +10,7 @@ import (
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/internal/kafkatest"
 	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 	"io"
 	"os"
 	"os/exec"
@@ -23,6 +24,7 @@ import (
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
 	transport "github.com/nextpkg/courier/transport/kafka"
+	"github.com/stretchr/testify/require"
 )
 
 // haOrders records an observable side effect before returning a response.
@@ -68,31 +70,25 @@ func TestHATransportChild(t *testing.T) {
 		tr = natsFactory(natsURL(t), os.Getenv("COURIER_HA_PREFIX"))(t)
 	} else {
 		kt, err := transport.New(context.Background(), transport.Options{Brokers: kafkatest.Brokers(t), Prefix: os.Getenv("COURIER_HA_PREFIX")})
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer testutil.Close(t, kt)
+		require.NoError(t, err)
+
+		defer testcheck.Close(t, kt)
 		tr = kt
 	}
 	if role == "client" {
 		api, c, err := demo.DialOrders(context.Background(), tr)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer testutil.Close(t, c)
+		require.NoError(t, err)
+
+		defer testcheck.Close(t, c)
 		f, err := api.GetAsync(context.Background(), "first", 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := f.Sent(context.Background()); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+		require.NoError(t, f.Sent(context.Background()))
+
 	} else {
 		s, err := demo.ListenOrders(context.Background(), tr, haOrders{&handlers.Orders{}, os.Getenv("COURIER_HA_DIR"), os.Getenv("COURIER_HA_BLOCK")})
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer testutil.Close(t, s)
+		require.NoError(t, err)
+
+		defer testcheck.Close(t, s)
 	}
 	fmt.Println("READY")
 	bufio.NewScanner(os.Stdin).Scan()
@@ -110,13 +106,11 @@ func startHAProcess(t *testing.T, prefix, directory, role, block string) *haProc
 	cmd.Env = append(os.Environ(), "COURIER_HA_PREFIX="+prefix, "COURIER_HA_DIR="+directory, "COURIER_HA_ROLE="+role, "COURIER_HA_BLOCK="+block)
 	cmd.Stderr = os.Stderr
 	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if err = cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +217,7 @@ func runHAProcessScaling(t *testing.T, prefix string, newTransport func() courie
 	}
 	defer func() { cancel(); wg.Wait() }()
 	awaitPID := func(pid int64) {
-		testutil.WaitFor(t, 15*time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return seen[pid] >= 4 }, "instance did not serve calls")
+		testcheck.WaitFor(t, 15*time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return seen[pid] >= 4 }, "instance did not serve calls")
 	}
 	awaitPID(int64(first.cmd.Process.Pid))
 	for round := 0; round < 2; round++ {
@@ -245,9 +239,8 @@ func runHAProcessScaling(t *testing.T, prefix string, newTransport func() courie
 		t.Fatalf("success=%d failed/mismatched=%d pending=%d", successes, failures, c.Pending())
 	}
 	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	counts := map[string]int{}
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Name(), "effect-") {
@@ -288,7 +281,7 @@ func TestKafkaHAServerCrash(t *testing.T) {
 				marker = "effect"
 			}
 			path := filepath.Join(dir, fmt.Sprintf("%s-%d-crash", marker, child.cmd.Process.Pid))
-			testutil.WaitFor(t, 5*time.Second, func() bool { _, err := os.Stat(path); return err == nil }, "crash point not reached")
+			testcheck.WaitFor(t, 5*time.Second, func() bool { _, err := os.Stat(path); return err == nil }, "crash point not reached")
 			start := time.Now()
 			child.stop(t, true)
 			replacement := startHAProcess(t, opts.Prefix, dir, "server", "")
@@ -332,7 +325,7 @@ func TestKafkaHAClientCrash(t *testing.T) {
 	if err != nil || v == nil || v.ID != "new-client" {
 		t.Fatalf("new call=%v %v", v, err)
 	}
-	testutil.WaitFor(t, 5*time.Second, func() bool { return tr.Stats().ReplyRecords >= 2 }, "old reply not observed")
+	testcheck.WaitFor(t, 5*time.Second, func() bool { return tr.Stats().ReplyRecords >= 2 }, "old reply not observed")
 	if tr.Stats().ReplyMatched != 1 || c.Pending() != 0 {
 		t.Fatalf("old reply matched new session: %+v pending=%d", tr.Stats(), c.Pending())
 	}
@@ -363,10 +356,9 @@ func runHABoundedPressureRecovery(t *testing.T, newTransport func() courier.Tran
 	testutil.Server(t, serverTransport, &handlers.Orders{Recorder: recorder})
 	tr := newTransport()
 	api, c, err := demo.DialOrders(context.Background(), tr, courier.ClientOptions{MaxInFlight: 8, DefaultTimeout: 5 * time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer testutil.Close(t, c)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, c)
 	for round := 0; round < 3; round++ {
 		var futures []*courier.Future[*demo.Item]
 		var ids []string
@@ -377,9 +369,8 @@ func runHABoundedPressureRecovery(t *testing.T, newTransport func() courier.Tran
 				rejected++
 				continue
 			}
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
+
 			futures = append(futures, f)
 			ids = append(ids, fmt.Sprintf("pressure-%d-%d", round, i))
 			if c.Pending() > 8 {
@@ -430,7 +421,7 @@ func TestNATSHAServerCrash(t *testing.T) {
 				marker = "effect"
 			}
 			path := filepath.Join(dir, fmt.Sprintf("%s-%d-crash", marker, child.cmd.Process.Pid))
-			testutil.WaitFor(t, time.Second, func() bool { _, err := os.Stat(path); return err == nil }, "handler not entered")
+			testcheck.WaitFor(t, time.Second, func() bool { _, err := os.Stat(path); return err == nil }, "handler not entered")
 			start := time.Now()
 			child.stop(t, true)
 			replacement := startHAProcess(t, prefix, dir, "server", "")
