@@ -45,13 +45,13 @@ KAFKA_BROKERS=127.0.0.1:9092 REPLY_MODE=thrift   go test -tags=integration -run 
 
 ## 资源限额与联合并发扫描
 
-当前已测曲线和全部参数在 [并发资料](benchmarks/kafka-gateway-2026-11-09/README.md)，容量解释在 [容量规划](KAFKA-CAPACITY.md)。下面命令本身不会创建 Broker 或设置 CPU/内存配额，应在相应容器限额下运行：
+当前已测曲线和测量条件在 [性能图表](benchmarks/kafka-gateway-2026-11-09/README.md)，容量解释在 [容量规划](KAFKA-CAPACITY.md)。下面命令本身不会创建 Broker 或设置 CPU/内存配额，应在相应容器限额下运行：
 
 ```sh
 KAFKA_BROKERS=kafka:9092 GOMAXPROCS=4 REPLY_MODE=thrift THRIFT_BATCH_SIZE=32   go test -tags=integration ./examples -run '^TestKafkaLoadCurve$' -count=1 -timeout=10m -args   -kafka-load-concurrency=256,512,768,1024,1280,1536,2048,3072   -kafka-load-duration=30s -kafka-load-trials=2 -kafka-load-mixed   -kafka-publish-workers=128 -kafka-server-workers=128 -kafka-reply-workers=128   -kafka-load-window=1024 -kafka-core-concurrency=128 -kafka-publish-buffers=1024   -kafka-max-in-flight=2048 -kafka-forward-batches=2 -kafka-load-resources
 ```
 
-此命令连续复用进程；归档曲线的各点使用独立进程与新 Broker，不能宣称两种运行顺序完全相同。固定默认 GC，不额外设置 GOGC/GOMEMLIMIT。REPLY_MODE=direct 选择独立直读对照；其他值走 HTTP 网关，thrift 走 Thrift 网关。
+此命令连续复用进程；图示曲线的各点使用独立进程与新 Broker，不能宣称两种运行顺序完全相同。固定默认 GC，不额外设置 GOGC/GOMEMLIMIT。REPLY_MODE=direct 选择独立直读对照；其他值走 HTTP 网关，thrift 走 Thrift 网关。
 
 每个并发 worker 循环发起调用，总在途调用由三个客户端分担。混合负载逐条验证业务 ID、服务来源及 Count 回显标记，统计 `completed_methods`、失败原因和 p50/p95/p99；结束后检查 Pending 为零。`-kafka-load-resources` 只采集 cgroup 指标，不是宿主机压力保护。
 
@@ -59,13 +59,13 @@ KAFKA_BROKERS=kafka:9092 GOMAXPROCS=4 REPLY_MODE=thrift THRIFT_BATCH_SIZE=32   g
 
 在相同拓扑、资源和固定并发下增大 `-kafka-load-duration`，或设置多轮并保留每轮结果。例如 30×20 秒复用同一组客户端和服务，可测约十分钟持续负载。不得把 30 秒短测改名为长稳，或把旧版本的持续负载数字当作新版本实测。
 
-早期十分钟负载及其绘图脚本见 [历史归档](history/README.md)。当前曲线的重绘入口随数据放在基准目录中。
+性能图表仅展示已确认的测量结论；较早版本的十分钟负载不代表当前版本的持续性能。
 
 ## 分段耗时诊断
 
 `-kafka-load-diagnostics` 启用测试专用的 SDK hooks 和 handler 包装，记录 `KAFKA_DIAGNOSTICS`。`produce_success` 覆盖入 SDK 至发布回调；`broker_api_*_wire` 是网络往返，`*_write_wait` 是 SDK 写入排队；`fetch_buffer_to_handler` 是 fetch 缓冲至核心 handler；`core_handler` 不含适配器回复发布。采样有锁及解码成本，应使用无采样对照，不能简单相减不同分母的平均值。
 
-`COURIER_PROFILE=1` 在负载测量窗口输出 CPU/分配 profile，容器内 `/bench` 需为可写目录；此开关仅在测试中使用。原始诊断数据及 v1/v2 采样边界见 [并发资料](benchmarks/kafka-gateway-2026-11-09/README.md#分段耗时)。
+`COURIER_PROFILE=1` 在负载测量窗口输出 CPU/分配 profile，容器内 `/bench` 需为可写目录；此开关仅在测试中使用。分段结果及 v1/v2 采样边界见 [并发资料](benchmarks/kafka-gateway-2026-11-09/README.md#分段耗时)。
 
 ## 扩缩容、背压与进程故障
 
