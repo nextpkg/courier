@@ -1,6 +1,6 @@
 # Binary message encoding
 
-Courier messages use a single binary encoding. `EncodeEnvelope` writes Thrift binary framing and `DecodeEnvelope` rejects non-binary input. `EncodeThriftEnvelope` is an explicit alias. There is no JSON message fallback or `Options.BinaryEnvelope` switch; Kafka, NATS and memory transports carry the same envelope bytes.
+Courier messages use a single binary encoding. `EncodeEnvelope` writes Thrift binary framing and `DecodeEnvelope` rejects non-binary input. There is no JSON message fallback or `Options.BinaryEnvelope` switch; Kafka, NATS and memory transports carry the same envelope bytes.
 
 Envelope framing is `80 43 52 01`, followed by the TBinaryProtocol struct in `envelope.thrift`. Reply routes use `80 52 54 01` and `transport/kafka/reply_route.thrift`. Known fields have strict types; missing/duplicate fields, truncated/trailing data and size violations are rejected. Unknown Thrift fields are skipped for schema evolution. Requests reserve space for a bounded binary error response before admission, and raw incoming records are checked against the same budget.
 
@@ -30,4 +30,4 @@ Kafka direct readers look up the session before materializing an envelope and sk
 
 The Kafka routing header is still validated against the reply envelope before enqueueing. A forwarded batch carries only Instance, Expires and the original envelope bytes: the destination connection identifies Endpoint, and ID/Session/Topic/Partition are read from the validated envelope view. The receiver checks its process instance, expiry, configured reply topic/partition bounds, live inbox and dedup state. The dedup ID owns storage before callbacks execute, including raw callbacks that may modify their input.
 
-Routing metadata retains the existing 768-byte budget, calculated from the omitted canonical route fields without rebuilding a header. Batch decoding validates the complete shape before delivering any item; instance/data slices are capacity-limited borrowed views. Single-message forwarding retains its full binary route header. This is the initial unpublished batch format, not an additional version or compatibility branch.
+Routing metadata retains the existing 768-byte budget, calculated from the omitted canonical route fields without rebuilding a header. Batch decoding validates the complete shape before delivering any item; instance/data slices are capacity-limited borrowed views. Single-message forwarding retains its full binary route header. This is the v1 batch format.

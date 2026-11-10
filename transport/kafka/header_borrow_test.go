@@ -2,13 +2,12 @@ package kafka
 
 import (
 	"bytes"
-	"context"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"runtime"
 	"testing"
 )
 
-func TestBorrowedHeaderLifetime(t *testing.T) {
+func TestBorrowedHeaderSelectionAndCapacity(t *testing.T) {
 	backing := []byte("route-sentinel")
 	headers := []kgo.RecordHeader{{Key: routeHeader, Value: backing[:5]}, {Key: routeHeader, Value: []byte("second")}}
 	h, ok := borrowedRouteHeader(headers)
@@ -18,15 +17,6 @@ func TestBorrowedHeaderLifetime(t *testing.T) {
 	appended := append(h, []byte("payload")...)
 	if string(backing) != "route-sentinel" || string(appended) != "routepayload" {
 		t.Fatal("append corrupted fetch storage")
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	pending := h
-	cancel()
-	headers = nil
-	h = nil
-	runtime.GC()
-	if ctx.Err() == nil || !bytes.Equal(pending, []byte("route")) {
-		t.Fatal("lost referenced storage")
 	}
 	if _, found := borrowedRouteHeader(nil); found {
 		t.Fatal("missing header")

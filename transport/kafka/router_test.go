@@ -2,6 +2,8 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"github.com/nextpkg/courier"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"net/http"
@@ -116,5 +118,36 @@ func TestRouterRejectsOversizedRoutingHeader(t *testing.T) {
 	e.Session = strings.Repeat("s", maxRouteBytes)
 	if _, err := r.routeHeader(e); err != courier.ErrTooLarge {
 		t.Fatalf("oversized header accepted: %v", err)
+	}
+}
+
+func TestRouterForwardProtocolConfiguration(t *testing.T) {
+	// Benchmark environment must not choose a production wire protocol.
+	t.Setenv("REPLY_MODE", "thrift")
+	for _, tc := range []struct {
+		name, protocol string
+		tls            bool
+		valid          bool
+	}{
+		{"default", "", false, true}, {"http", "http", false, true}, {"thrift", "thrift", false, true},
+		{"unknown", "other", false, false}, {"thrift TLS", "thrift", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, _, _ := routerFixture(t)
+			o := &ReplyRouterOptions{ListenAddress: "127.0.0.1:0", AdvertiseURL: "http://127.0.0.1:0", AllowInsecureHTTP: true, ForwardProtocol: tc.protocol}
+			if tc.tls {
+				o.ClientTLS = &tls.Config{}
+			}
+			r.t.opts.ReplyRouter = o
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			_, err := r.t.startReplyRouter(ctx)
+			if tc.valid && !errors.Is(err, context.Canceled) {
+				t.Fatalf("valid configuration rejected before lifecycle check: %v", err)
+			}
+			if !tc.valid && (err == nil || errors.Is(err, context.Canceled)) {
+				t.Fatalf("invalid protocol/TLS accepted: %v", err)
+			}
+		})
 	}
 }

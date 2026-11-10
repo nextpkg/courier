@@ -11,10 +11,6 @@ var binaryEnvelopePrefix = []byte{0x80, 'C', 'R', 1}
 
 func hasBinaryEnvelopePrefix(b []byte) bool { return bytes.HasPrefix(b, binaryEnvelopePrefix) }
 
-// EncodeThriftEnvelope is an explicit alias for the binary-only EncodeEnvelope.
-func EncodeThriftEnvelope(e Envelope, limit int) ([]byte, error) {
-	return EncodeEnvelope(e, limit)
-}
 func encodeBinaryEnvelope(e Envelope, limit int) ([]byte, error) {
 	if int64(e.Version) < -2147483648 || int64(e.Version) > 2147483647 {
 		return nil, fmt.Errorf("courier: version out of range")

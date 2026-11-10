@@ -8,6 +8,8 @@
 
 ## 部署模型
 
+下图为默认直读模式；消费组回复网关见后文 Embedded reply routing。
+
 客户端通过服务名调用，不指定服务实例；同服务的多个副本加入同一消费组，由 Kafka 分区分配决定接收请求的副本，分区内的 worker 可并发执行，因此不保证业务完成顺序。
 
 ```mermaid
@@ -136,11 +138,15 @@ Metadata 已报告 Leader 不代表该分区立即可接受 Produce；新建 top
 
 小消息吞吐场景可显式使用 `AutoCapacityProfile()`，在初始化前统一选择客户端发送、服务端处理、窗口和缓冲配置；1 核与 2 核的实测值、使用示例及适用边界见 [容量规划](KAFKA-CAPACITY.md#启动时自动选择配置)。原有默认值不变，不提供运行中的自动扩缩容。
 
+## 显式选择转发协议
+
+`ReplyRouterOptions.ForwardProtocol` 接受 `"http"`（默认）或 `"thrift"`。HTTP 路径支持所配置的 TLS；Thrift 是可信内部网络的明文 framed TCP，要求 http 形式的实例地址和 AllowInsecureHTTP，不能同时配置 TLS。生产适配器不读取 REPLY_MODE；该变量仅由负载/集成测试映射到显式选项。
+
 ## Embedded reply routing
 
 `Options.ReplyRouter` enables consumer-group reply routing without a registry or
 an additional broker. All client transports for a routed reply topic must use
-one group. Use a **separate reply topic** from legacy
+one group. Use a **separate reply topic** from direct
 manual-partition inboxes: mixing the two modes can discard unroutable replies or
 restore read amplification. Existing direct-reader behavior remains the default.
 
@@ -161,11 +167,11 @@ trusted private networks/tests. This router targets trusted enterprise-internal
 services and does not authenticate routing metadata or forwarding bodies with HMAC.
 Kafka writers, router endpoints and participating services must belong to that
 trusted deployment. TLS configuration remains available for the HTTP path;
-removing HMAC does not enable TLS/mTLS on the experimental Thrift TCP adapter.
+the Thrift TCP adapter does not implement TLS/mTLS.
 Redirects and environment HTTP proxies are not used. Port zero is supported for
 local tests; `ReplyEndpoint()` returns the selected endpoint. Server-only
 transports do not need a listener: leave `ReplyRouter` nil and enable
-`DynamicReplyPartitions`. `ReplyRouterOptions.Secret` has been removed.
+`DynamicReplyPartitions`.
 
 Binary reply routing metadata uses format version 1.
 
@@ -177,7 +183,7 @@ flowchart LR
     O --> C[Pending RPC]
 ```
 
-Requests carry signed routing metadata in Kafka headers, including an instance
+Requests carry routing metadata in Kafka headers, including an instance
 nonce, session, request ID, partition, and expiry. The Kafka server adapter copies
 this metadata to the response; upgrade that adapter too. The consumer validates
 metadata, delivers locally or forwards over reused HTTP connections, and commits
@@ -191,7 +197,7 @@ origin has already lost its pending calls.
 A restarted process receives a fresh nonce even if its address/session is reused.
 It rejects old-instance deliveries; forwarding peers cache that terminal result
 in a bounded cache. Missing sessions and expired replies are terminal too.
-Unreachable peers and transient HTTP failures retry until the signed deadline,
+Unreachable peers and transient HTTP failures retry until the route deadline,
 bounded by `MaxReplyAge` (default 30s, at most `ProcessingTimeout`). A forwarding
 process stopping before delivery completes leaves the offset uncommitted for
 another group member. Expiry is deliberately terminal and permits the offset to
@@ -203,7 +209,7 @@ per inbox, idle pooled connections are bounded globally, and stale-instance
 entries are bounded to 1024. A slow/unreachable destination can still delay a
 partition's contiguous commit and fill the shared window, delaying other assigned
 partitions until expiry. Choose deadlines
-and limits for the workload; the first implementation does not batch HTTP replies.
+and limits for the workload; optional forwarding batches are described below.
 Callbacks must remain short and must not synchronously close their own inbox.
 
 In routed mode new requests hash their request ID over live partition metadata,
@@ -228,7 +234,7 @@ completed forwards, expired replies, suppressed duplicates, stale-instance
 replies and retries. Sum across processes to assess read amplification; recovery
 replays can legitimately exceed one read per reply. Throughput, CPU and memory
 benefits depend on whether avoided reads outweigh forwarding costs.
-# Ready-only reply forwarding batches
+## Ready-only reply forwarding batches
 
 `ReplyRouterOptions.BatchSize` optionally enables forwarding batches (2–32;
 zero keeps single-reply HTTP requests). Enable it only after all receiving peers
@@ -237,7 +243,7 @@ Setting it back to zero restores single-reply forwarding without changing topics
 
 The first ready reply starts immediately. Replies queued for the same endpoint
 while a request is in flight are sent together next, without a batching timer.
-Each endpoint has one active sender; consumer workers bound queued messages.
+Each endpoint has one active sender by default, or at most two with BatchConcurrency=2; consumer workers bound queued messages.
 A batch is limited by both message count and the aggregate frame-byte budget.
 Slow destinations can still occupy the shared consumer window; this option does
 not provide per-destination fairness.
@@ -266,3 +272,7 @@ Results may arrive out of order and are returned through each item's own done
 channel; the existing contiguous completion window still controls Kafka commits.
 The coordinator remains tracked until all sends finish, including cancelled
 waiters. No linger timer or unbounded send queue is introduced.
+
+## 对象复用与关闭
+
+发布完成槽缓存最多 min(PublishBuffers,1024) 个空闲对象，调用方和 SDK 回调各持一个引用；取消仅释放调用方，迟到回调结束后才能清除结果并回池。转发条目遵循相同的等待方/发送方双引用规则，清除消息与 context 后复用。缓存满时交给 GC；公开 Future 不池化，也不调整全局 GC。关闭时解除缓存引用，在途操作保留必要所有权。

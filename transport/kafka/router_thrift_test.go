@@ -2,10 +2,7 @@ package kafka
 
 import (
 	"context"
-	"io"
 	"net"
-	"net/http"
-	"strings"
 	"testing"
 )
 
@@ -26,18 +23,13 @@ func TestThriftForwardUnsignedIdentityReplayAndClose(t *testing.T) {
 	done := make(chan struct{})
 	go func() { peer.serve(ln); close(done) }()
 	defer func() { peer.close(); <-done }()
-	client := &http.Client{Transport: peer}
 	send := func() int {
 		hdr, _ := marshalForwardRoute(f)
-		req, _ := http.NewRequest("POST", "http://"+ln.Addr().String()+"/courier/reply", strings.NewReader(string(b)))
-		req.Header.Set("X-Courier-Route", string(hdr))
-		resp, err := client.Do(req)
+		result, err := peer.forward(context.Background(), ln.Addr().String(), "Forward", hdr, b, int64(r.t.opts.MaxFrameBytes))
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-		return resp.StatusCode
+		return result.status
 	}
 	if s := send(); s != 204 {
 		t.Fatalf("delivery status %d", s)
@@ -54,8 +46,7 @@ func TestThriftForwardUnsignedIdentityReplayAndClose(t *testing.T) {
 	}
 	peer.close()
 	<-done
-	req, _ := http.NewRequest("POST", "http://"+ln.Addr().String()+"/courier/reply", nil)
-	if _, err := client.Do(req); err == nil {
+	if _, err := peer.forward(context.Background(), ln.Addr().String(), "Forward", nil, b, int64(r.t.opts.MaxFrameBytes)); err == nil {
 		t.Fatal("closed peer accepted")
 	}
 }

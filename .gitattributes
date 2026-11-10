@@ -1,8 +1,4 @@
-# Generated measurement artifacts remain available without dominating code review.
+# Machine-generated measurement records remain accessible without dominating source review.
 docs/benchmarks/kafka-gateway-2026-11-09/*.json linguist-generated=true
 docs/benchmarks/kafka-gateway-2026-11-09/*.csv linguist-generated=true
 docs/benchmarks/kafka-gateway-2026-11-09/*.svg linguist-generated=true
-docs/benchmarks/kafka-gateway-decoupling-2026-11-10/*.json linguist-generated=true
-docs/benchmarks/kafka-gateway-decoupling-2026-11-10/*.csv linguist-generated=true
-# Unified diff context requires a leading space, including before tabs/blank lines.
-docs/benchmarks/kafka-gateway-decoupling-2026-11-10/candidate.patch -whitespace linguist-generated=true

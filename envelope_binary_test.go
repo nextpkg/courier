@@ -11,7 +11,7 @@ func TestBinaryEnvelopeRoundTrip(t *testing.T) {
 	for _, kind := range []string{"request", "response"} {
 		for _, rpcerr := range []*RPCError{nil, {}, {Code: "deadline", Message: "中文\n\"error"}} {
 			e := Envelope{Version: 1, Kind: kind, Service: "S", Method: "M", ID: "id", Session: "s", Reply: Route{Topic: "reply", Partition: 2}, Deadline: 1234, Payload: []byte{0, 255, 1, 2}, Error: rpcerr}
-			b, err := EncodeThriftEnvelope(e, 4096)
+			b, err := EncodeEnvelope(e, 4096)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -38,7 +38,7 @@ func TestBinaryEnvelopeRoundTrip(t *testing.T) {
 			if _, err := DecodeEnvelope(b, len(b)-1); !errors.Is(err, ErrTooLarge) {
 				t.Fatal("read size bypassed")
 			}
-			if _, err := EncodeThriftEnvelope(e, 4); err == nil {
+			if _, err := EncodeEnvelope(e, 4); err == nil {
 				t.Fatal("write size bypassed")
 			}
 		}
@@ -47,7 +47,7 @@ func TestBinaryEnvelopeRoundTrip(t *testing.T) {
 
 func TestBinaryEnvelopeRejectsBadFields(t *testing.T) {
 	e := Envelope{Version: 1, Kind: "response", Service: "S", Method: "M", ID: "id", Session: "s", Reply: Route{Topic: "r"}}
-	b, err := EncodeThriftEnvelope(e, 512)
+	b, err := EncodeEnvelope(e, 512)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestBinaryEnvelopeRejectsBadFields(t *testing.T) {
 		t.Fatal("duplicate version accepted")
 	}
 	e.Version = 99
-	b, err = EncodeThriftEnvelope(e, 512)
+	b, err = EncodeEnvelope(e, 512)
 	if err != nil {
 		t.Fatal(err)
 	}

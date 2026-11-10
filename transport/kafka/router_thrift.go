@@ -1,9 +1,8 @@
 package kafka
 
-// Experimental wire adapter: Thrift Binary over framed TCP, preserving the
+// Thrift Binary over framed TCP, preserving the
 // existing envelope, delivery statuses and retry/commit path.
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -187,31 +186,6 @@ func readFramedBinary(ctx context.Context, p *thrift.TBinaryProtocol, limit int6
 	value := make([]byte, int(size))
 	_, err = io.ReadFull(frame, value)
 	return value, thrift.NewTProtocolException(err)
-}
-
-func (s *rpcPeer) RoundTrip(req *http.Request) (*http.Response, error) {
-	if req.Method != "POST" || (req.URL.Path != "/courier/reply" && req.URL.Path != "/courier/replies") {
-		return nil, fmt.Errorf("experimental thrift: unsupported operation")
-	}
-	method := "Forward"
-	maxBody := int64(s.r.t.opts.MaxFrameBytes)
-	if req.URL.Path == "/courier/replies" {
-		method = "ForwardBatch"
-		maxBody = s.r.batchLimit()
-	}
-	if req.Body == nil {
-		req.Body = http.NoBody
-	}
-	body, err := io.ReadAll(io.LimitReader(req.Body, maxBody+1))
-	req.Body.Close()
-	if err != nil {
-		return nil, err
-	}
-	result, err := s.forward(req.Context(), req.URL.Host, method, []byte(req.Header.Get("X-Courier-Route")), body, maxBody)
-	if err != nil {
-		return nil, err
-	}
-	return &http.Response{StatusCode: result.status, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(result.body)), Request: req}, nil
 }
 
 type rpcResult struct {

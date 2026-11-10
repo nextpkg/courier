@@ -85,7 +85,12 @@ func runLoadCurve(t *testing.T) {
 			serverOpts.DynamicReplyPartitions = true
 			opts.Workers, opts.Window = *loadReplyWorkers, *loadWindow
 			batchSize, _ := strconv.Atoi(os.Getenv("THRIFT_BATCH_SIZE"))
-			opts.ReplyRouter = &kafka.ReplyRouterOptions{BatchConcurrency: *loadForwardBatches, BatchSize: batchSize, ListenAddress: "127.0.0.1:0", AdvertiseURL: "http://127.0.0.1:0", AllowInsecureHTTP: true}
+			opts.ReplyRouter = &kafka.ReplyRouterOptions{ForwardProtocol: func() string {
+				if os.Getenv("REPLY_MODE") == "thrift" {
+					return "thrift"
+				}
+				return "http"
+			}(), BatchConcurrency: *loadForwardBatches, BatchSize: batchSize, ListenAddress: "127.0.0.1:0", AdvertiseURL: "http://127.0.0.1:0", AllowInsecureHTTP: true}
 		}
 		serverOpts.Hooks = append(serverOpts.Hooks, &loadPublishErrors{t: t, role: "server"})
 		opts.Hooks = append(opts.Hooks, &loadPublishErrors{t: t, role: "client"})

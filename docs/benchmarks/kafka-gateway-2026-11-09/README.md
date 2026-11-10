@@ -1,6 +1,6 @@
 # Kafka 网关并发与分段测量
 
-测量日期：2026-11-09。测量版本由 `source-sha256.json` 和 `binary-sha256.json` 标识；只有文件指纹匹配的源码提交才能复用这组结果。
+测量日期：2026-11-09。测量来自整理前的源码快照；整理后的代码尚未重新测量吞吐。测量版本由 `source-sha256.json` 和 `binary-sha256.json` 标识；只有文件指纹匹配的源码提交才能复用这组结果。
 
 ## 条件与负载
 
@@ -32,7 +32,7 @@ Linux ARM64、Go 1.27.3、默认 GC；应用 4 CPU / 1 GiB、GOMAXPROCS=4；Kafk
 
 - `concurrency.csv/json`：吞吐、延迟、CPU 效率与边际收益汇总。
 - `rounds.json`：原始数值及有效性标记。
-- `diagnostic-v1/v2-rounds.json`、`diagnostic-v1/v2-stages.json`、`stages-*.csv`：诊断观测、样本数和直方图汇总。
+- `stages-*.csv`：结论所用的分段汇总；v1/v2 原始观测、完整直方图及排除记录在 [diagnostic-evidence.tar.gz](diagnostic-evidence.tar.gz)，包内 MANIFEST.json 提供逐文件校验。
 - `environment.json`、`source-sha256.json`、`binary-sha256.json`：环境与版本指纹。
 - `summarize.py`：使用 Python 3 从原始数据重新生成汇总。
 - `plot.py`：使用 Python 3 和 matplotlib 生成 PNG/SVG/PDF。
@@ -57,4 +57,4 @@ python3 plot.py
 
 每次重跑记录新的版本和环境，重新评估轮次有效性，不能直接沿用本数据的排除标记。这组结果是短时闭环负载，不代表持续负载验证。
 
-相同基线上的实现对照另见 [回复消费与转发完成解耦实验](../kafka-gateway-decoupling-2026-11-10/README.md)。
+相同基线上的实现对照另见 [历史实验归档](../../history/README.md)。

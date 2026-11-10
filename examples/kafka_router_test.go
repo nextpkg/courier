@@ -9,13 +9,19 @@ import (
 	kafka "github.com/nextpkg/courier/transport/kafka"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"net/url"
+	"os"
 	"sync"
 	"testing"
 	"time"
 )
 
 func routerOptions(o kafka.Options) kafka.Options {
-	o.ReplyRouter = &kafka.ReplyRouterOptions{BatchConcurrency: *loadForwardBatches, ListenAddress: "127.0.0.1:0", AdvertiseURL: "http://127.0.0.1:0", AllowInsecureHTTP: true, MaxReplyAge: 15 * time.Second}
+	o.ReplyRouter = &kafka.ReplyRouterOptions{ForwardProtocol: func() string {
+		if os.Getenv("REPLY_MODE") == "thrift" {
+			return "thrift"
+		}
+		return "http"
+	}(), BatchConcurrency: *loadForwardBatches, ListenAddress: "127.0.0.1:0", AdvertiseURL: "http://127.0.0.1:0", AllowInsecureHTTP: true, MaxReplyAge: 15 * time.Second}
 	return o
 }
 func eventuallyRouter(t *testing.T, f func() bool) {

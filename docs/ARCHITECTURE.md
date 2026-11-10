@@ -1,6 +1,6 @@
 # 架构与传输语义
 
-Courier 将 Thrift 的接口契约与消息传输分离：业务方法由官方 Processor 分派，框架负责请求路由、异步结果关联和资源约束，适配器负责具体消息系统的投递与故障处理。
+Courier 将 Thrift 的接口契约与消息传输分离：业务方法由基于官方生成代码的 CourierProcessor 分派，框架负责请求路由、异步结果关联和资源约束，适配器负责具体消息系统的投递与故障处理。
 
 ## 架构图
 
@@ -23,7 +23,7 @@ flowchart TB
     end
     subgraph Server[服务端进程]
         ST[传输适配器] --> SRV[Courier Server：校验与并发限制]
-        SRV --> PROC[官方 Thrift Processor]
+        SRV --> PROC[CourierProcessor：复用官方 Args/Result]
         PROC --> H[业务 handler]
     end
     API -.-> STUB
@@ -84,7 +84,7 @@ Thrift 的分层职责见 [官方 Concepts](https://thrift.apache.org/docs/conce
 | --- | --- | --- | --- | --- |
 | Memory | 同一服务的 worker 竞争同一个接收通道 | 进程内回复通道 | 本地有界发送队列接受 | 不持久化、不跨进程 |
 | Core NATS | 服务 subject + queue group | 每个 Client 一个 Inbox 通配订阅 | 发布后 PING/PONG 往返 | 不使用 JetStream，无持久化确认 |
-| Kafka | 每个服务请求 topic + consumer group | 每个 Client 一个直接分区 reader | Broker all-ISR 发布确认 | 可重投递，业务副作用可能重复 |
+| Kafka | 每个服务请求 topic + consumer group | 同 Transport 共享直读 reader，或启用回复网关 | Broker all-ISR 发布确认 | 可重投递，业务副作用可能重复 |
 
 ### Memory
 
@@ -106,11 +106,11 @@ Thrift 的分层职责见 [官方 Concepts](https://thrift.apache.org/docs/conce
 
 ### Kafka
 
-适配器基于 [franz-go](https://github.com/twmb/franz-go)；请求由消费组分配，回复通过直接分区 reader 读取。每个独立服务预建请求 topic；共享物理 topic 的副本必须实现映射中的全部服务，`ServiceListener` 在启动前验证本进程的完整注册集合，不能验证其他进程的配置。
+适配器基于 [franz-go](https://github.com/twmb/franz-go)；请求由消费组分配，回复可使用 Transport 共享的直接分区 reader，或启用消费组回复网关并转发到目标实例。每个独立服务预建请求 topic；共享物理 topic 的副本必须实现映射中的全部服务，`ServiceListener` 在启动前验证本进程的完整注册集合，不能验证其他进程的配置。
 
 消费端关闭自动提交，以有界窗口记录每个分区按读取顺序的完成状态；只有成功回复或明确丢弃的连续前缀才能提交。回复发布或提交失败后停止接收新工作，有限排空后重新加入消费组，从已提交 offset 重读，因此不承诺业务恰好执行一次。
 
-回复 reader 在接受调用前取得具体数字结束 offset，重连保留读取位置，保留期导致 offset 丢失时禁止自动 reset；新客户端生成新 session。多个 reader 可以看到共享分区的相同内容，session 过滤只保证路由关联，不提供保密隔离。
+直读模式的回复 reader 在接受调用前取得具体数字结束 offset，重连保留读取位置，保留期导致 offset 丢失时禁止自动 reset；新客户端生成新 session。多个 reader 可以看到共享分区的相同内容，session 过滤只保证路由关联，不提供保密隔离。
 
 完整配置、毒消息策略和恢复行为见 [Kafka 路由与资源配置](KAFKA.md)，共享回复的带宽成本见 [容量规划](KAFKA-CAPACITY.md)，可复现验证与曲线见 [测试与性能](TESTING.md)。
 

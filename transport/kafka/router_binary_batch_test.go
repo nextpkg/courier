@@ -1,11 +1,8 @@
 package kafka
 
 import (
-	"bytes"
 	"context"
-	"io"
 	"net"
-	"net/http"
 	"reflect"
 	"testing"
 )
@@ -25,7 +22,6 @@ func TestBinaryBatchWireUnsignedPartialReplay(t *testing.T) {
 	}
 	peer := newRPCPeer(r, ln)
 	r.rpc = peer
-	r.client = &http.Client{Transport: peer}
 	done := make(chan struct{})
 	go func() { peer.serve(ln); close(done) }()
 	defer func() { peer.close(); <-done }()
@@ -41,15 +37,12 @@ func TestBinaryBatchWireUnsignedPartialReplay(t *testing.T) {
 		body []byte
 		want int
 	}{{encodeBinaryBatch(msgs), 200}, {append(encodeBinaryBatch(msgs), 1), 400}} {
-		req, _ := http.NewRequest("POST", endpoint+"/courier/replies", bytes.NewReader(tc.body))
-		resp, err := r.client.Do(req)
+		result, err := peer.forward(context.Background(), ln.Addr().String(), "ForwardBatch", nil, tc.body, r.batchLimit())
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode != tc.want {
-			t.Fatal(resp.StatusCode)
+		if result.status != tc.want {
+			t.Fatal(result.status)
 		}
 	}
 	if calls != 1 {

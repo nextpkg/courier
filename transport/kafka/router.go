@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,10 +25,11 @@ import (
 
 // ReplyRouterOptions enables a peer reply router. All peers sharing a reply
 // topic must share Group, and advertise directly reachable endpoints.
-// Use a separate reply topic from legacy direct-reader clients. Servers only
+// Use a separate reply topic from direct-reader clients. Servers only
 // need DynamicReplyPartitions and the routing-header-capable adapter.
 type ReplyRouterOptions struct {
-	BatchConcurrency  int // In-flight batches per endpoint: 0/1 selects serial, 2 enables bounded overlap.
+	ForwardProtocol   string // "http" (default, with optional TLS) or "thrift" (trusted plaintext peers).
+	BatchConcurrency  int    // In-flight batches per endpoint: 0/1 selects serial, 2 enables bounded overlap.
 	ListenAddress     string
 	AdvertiseURL      string
 	Group             string
@@ -44,13 +44,13 @@ type ReplyRouterOptions struct {
 // Route metadata carries correlation and expiry for trusted internal peers;
 // it is not an authentication token.
 type forwardRoute struct {
-	Endpoint  string `json:"endpoint"`
-	Instance  string `json:"instance"`
-	Session   string `json:"session"`
-	ID        string `json:"id"`
-	Topic     string `json:"topic"`
-	Partition int32  `json:"partition"`
-	Expires   int64  `json:"expires"`
+	Endpoint  string
+	Instance  string
+	Session   string
+	ID        string
+	Topic     string
+	Partition int32
+	Expires   int64
 }
 
 var errReplyPartition = errors.New("kafka: reply partition not provisioned")
@@ -145,6 +145,12 @@ func replyHeaders(headers []kgo.RecordHeader) []kgo.RecordHeader {
 }
 func (t *Transport) startReplyRouter(ctx context.Context) (*replyRouter, error) {
 	o := *t.opts.ReplyRouter
+	if o.ForwardProtocol == "" {
+		o.ForwardProtocol = "http"
+	}
+	if o.ForwardProtocol != "http" && o.ForwardProtocol != "thrift" {
+		return nil, fmt.Errorf("kafka: unknown reply forwarding protocol %q", o.ForwardProtocol)
+	}
 	if o.MaxReplyAge == 0 {
 		o.MaxReplyAge = 30 * time.Second
 	}
@@ -157,6 +163,9 @@ func (t *Transport) startReplyRouter(ctx context.Context) (*replyRouter, error) 
 	u, err := url.Parse(o.AdvertiseURL)
 	if err != nil || u == nil || u.Hostname() == "" || u.Port() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || (u.Scheme != "https" && !(u.Scheme == "http" && o.AllowInsecureHTTP)) || o.ListenAddress == "" || o.MaxReplyAge < time.Millisecond || o.MaxReplyAge > t.opts.ProcessingTimeout || o.DedupEntries < 1 || o.DedupEntries > 65536 || o.BatchSize < 0 || o.BatchSize > 32 || o.BatchConcurrency < 0 || o.BatchConcurrency > 2 {
 		return nil, fmt.Errorf("kafka: invalid reply router endpoint or limits")
+	}
+	if o.ForwardProtocol == "thrift" && (u.Scheme != "http" || o.ServerTLS != nil || o.ClientTLS != nil) {
+		return nil, fmt.Errorf("kafka: thrift reply forwarding requires trusted plaintext endpoints; use http forwarding for TLS")
 	}
 	if u.Scheme == "https" && (o.ServerTLS == nil || len(o.ServerTLS.Certificates) == 0 && o.ServerTLS.GetCertificate == nil) {
 		return nil, fmt.Errorf("kafka: HTTPS reply router requires server certificate")
@@ -189,9 +198,8 @@ func (t *Transport) startReplyRouter(ctx context.Context) (*replyRouter, error) 
 	if o.ServerTLS != nil {
 		r.server.TLSConfig = o.ServerTLS.Clone()
 	}
-	if os.Getenv("REPLY_MODE") == "thrift" {
+	if o.ForwardProtocol == "thrift" {
 		r.rpc = newRPCPeer(r, ln)
-		r.client.Transport = r.rpc
 	}
 	go func() {
 		defer close(r.served)
@@ -502,6 +510,17 @@ func (r *replyRouter) forward(ctx context.Context, record *kgo.Record) error {
 			status = r.deliverView(f, record.Value, view)
 		} else if r.opts.BatchSize > 1 {
 			status = r.enqueueForward(life, f.Endpoint, f.Instance, f.Expires, record.Value)
+		} else if r.rpc != nil {
+			r.httpRequests.Add(1)
+			r.httpMessages.Add(1)
+			endpoint, err := url.Parse(f.Endpoint)
+			if err != nil {
+				return err
+			}
+			result, err := r.rpc.forward(life, endpoint.Host, "Forward", header, record.Value, int64(r.t.opts.MaxFrameBytes))
+			if err == nil {
+				status = result.status
+			}
 		} else {
 			r.httpRequests.Add(1)
 			r.httpMessages.Add(1)
@@ -509,12 +528,7 @@ func (r *replyRouter) forward(ctx context.Context, record *kgo.Record) error {
 			if err != nil {
 				return err
 			}
-			hdr := string(header)
-			wireHeader := hdr
-			if r.rpc == nil {
-				wireHeader = "base64:" + base64.StdEncoding.EncodeToString([]byte(hdr))
-			}
-			req.Header.Set("X-Courier-Route", wireHeader)
+			req.Header.Set("X-Courier-Route", "base64:"+base64.StdEncoding.EncodeToString(header))
 			resp, err := r.client.Do(req)
 			if err == nil {
 				status = resp.StatusCode
