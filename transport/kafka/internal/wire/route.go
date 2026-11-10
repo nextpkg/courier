@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/internal/binread"
 	"github.com/nextpkg/courier/internal/binwrite"
 	"sync"
 )
@@ -46,6 +47,12 @@ func (c *routeCodec) readString(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("invalid route string length")
 	}
 	return string(c.b.Next(int(size))), nil
+}
+func (c *routeCodec) readValue(ctx context.Context, err *error) (v string) {
+	if *err == nil {
+		v, *err = c.readString(ctx)
+	}
+	return
 }
 func EncodeRoute(f Route) ([]byte, error) {
 	c := getRouteCodec()
@@ -94,6 +101,7 @@ func DecodeRoute(data []byte) (Route, error) {
 	if _, err := p.ReadStructBegin(ctx); err != nil {
 		return f, err
 	}
+	r := binread.Reader{Protocol: p, Context: ctx}
 	var seen uint16
 	for {
 		_, ty, id, err := p.ReadFieldBegin(ctx)
@@ -115,69 +123,52 @@ func DecodeRoute(data []byte) (Route, error) {
 			if ty != thrift.STRING {
 				return f, fmt.Errorf("invalid route field type")
 			}
-			v, err := c.readString(ctx)
-			if err != nil {
-				return f, err
-			}
-			f.Endpoint = v
+			f.Endpoint = c.readValue(ctx, &r.Err)
 		case RouteFieldInstance:
 			if ty != thrift.STRING {
 				return f, fmt.Errorf("invalid route field type")
 			}
-			v, err := c.readString(ctx)
-			if err != nil {
-				return f, err
-			}
-			f.Instance = v
+			f.Instance = c.readValue(ctx, &r.Err)
 		case RouteFieldSession:
 			if ty != thrift.STRING {
 				return f, fmt.Errorf("invalid route field type")
 			}
-			v, err := c.readString(ctx)
-			if err != nil {
-				return f, err
-			}
-			f.Session = v
+			f.Session = c.readValue(ctx, &r.Err)
 		case RouteFieldID:
 			if ty != thrift.STRING {
 				return f, fmt.Errorf("invalid route field type")
 			}
-			v, err := c.readString(ctx)
-			if err != nil {
-				return f, err
-			}
-			f.ID = v
+			f.ID = c.readValue(ctx, &r.Err)
 		case RouteFieldTopic:
 			if ty != thrift.STRING {
 				return f, fmt.Errorf("invalid route field type")
 			}
-			v, err := c.readString(ctx)
-			if err != nil {
-				return f, err
-			}
-			f.Topic = v
+			f.Topic = c.readValue(ctx, &r.Err)
 		case RouteFieldPartition:
 			if ty != thrift.I32 {
 				return f, fmt.Errorf("invalid route field type")
 			}
-			v, err := p.ReadI32(ctx)
-			if err != nil {
-				return f, err
+			v := r.Int32()
+			if r.Err != nil {
+				return f, r.Err
 			}
 			f.Partition = v
 		case RouteFieldExpires:
 			if ty != thrift.I64 {
 				return f, fmt.Errorf("invalid route field type")
 			}
-			v, err := p.ReadI64(ctx)
-			if err != nil {
-				return f, err
+			v := r.Int64()
+			if r.Err != nil {
+				return f, r.Err
 			}
 			f.Expires = v
 		default:
 			if err := p.Skip(ctx, ty); err != nil {
 				return f, err
 			}
+		}
+		if r.Err != nil {
+			return f, r.Err
 		}
 		if err := p.ReadFieldEnd(ctx); err != nil {
 			return f, err

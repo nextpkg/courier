@@ -2,6 +2,7 @@ package wire
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -76,36 +77,17 @@ func DecodeBatch(b []byte, max int) ([]ReceivedBatchMessage, error) {
 		return nil, fmt.Errorf("invalid batch count")
 	}
 	out := make([]ReceivedBatchMessage, 0, n)
-	take := func(limit int) ([]byte, error) {
-		if len(b) < 4 {
-			return nil, fmt.Errorf("missing field length")
-		}
-		size := uint64(binary.BigEndian.Uint32(b))
-		b = b[4:]
-		if size > uint64(limit) || size > uint64(len(b)) {
-			return nil, fmt.Errorf("invalid field size")
-		}
-		v := b[:int(size):int(size)]
-		b = b[int(size):]
-		return v, nil
-	}
+	c := batchCursor{data: b}
 	for i := 0; i < n; i++ {
-		h, e := take(MaxRouteBytes)
-		if e != nil {
-			return nil, e
-		}
-		if len(b) < 8 {
-			return nil, fmt.Errorf("missing expiry")
-		}
-		expires := int64(binary.BigEndian.Uint64(b[:8]))
-		b = b[8:]
-		d, e := take(max)
-		if e != nil {
-			return nil, e
+		h := c.blob(MaxRouteBytes)
+		expires := c.expiry()
+		d := c.blob(max)
+		if c.err != nil {
+			return nil, c.err
 		}
 		out = append(out, ReceivedBatchMessage{Instance: h, Expires: expires, Data: d})
 	}
-	if len(b) != 0 {
+	if len(c.data) != 0 {
 		return nil, fmt.Errorf("trailing batch Data")
 	}
 	return out, nil
@@ -132,4 +114,54 @@ type BatchMessage struct {
 	Instance string
 	Expires  int64
 	Data     []byte
+}
+
+type batchCursor struct {
+	data []byte
+	err  error
+}
+
+var (
+	errFieldLength = errors.New("missing field length")
+	errFieldSize   = errors.New("invalid field size")
+	errExpiry      = errors.New("missing expiry")
+)
+
+func (c *batchCursor) take(n uint64, err error) []byte {
+	if c.err != nil {
+		return nil
+	}
+	if n > uint64(len(c.data)) {
+		c.err = err
+		return nil
+	}
+	v := c.data[:int(n):int(n)]
+	c.data = c.data[int(n):]
+	return v
+}
+func (c *batchCursor) size() uint64 {
+	v := c.take(4, errFieldLength)
+	if c.err != nil {
+		return 0
+	}
+	return uint64(binary.BigEndian.Uint32(v))
+}
+func readBatch(c *batchCursor, limit int, size func(*batchCursor) uint64, take func(*batchCursor, uint64, int) []byte) []byte {
+	return take(c, size(c), limit)
+}
+func takeBatch(c *batchCursor, n uint64, limit int) []byte {
+	if c.err == nil && n > uint64(limit) {
+		c.err = errFieldSize
+	}
+	return c.take(n, errFieldSize)
+}
+func (c *batchCursor) blob(limit int) []byte {
+	return readBatch(c, limit, (*batchCursor).size, takeBatch)
+}
+func (c *batchCursor) expiry() int64 {
+	v := c.take(8, errExpiry)
+	if c.err != nil {
+		return 0
+	}
+	return int64(binary.BigEndian.Uint64(v))
 }

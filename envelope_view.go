@@ -2,9 +2,8 @@ package courier
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
-	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/nextpkg/courier/internal/binread"
 )
 
 // ReplyEnvelopeView borrows immutable bytes from the complete input frame.
@@ -38,34 +37,6 @@ func (v ReplyEnvelopeView) OwnedEnvelope() Envelope {
 	return e
 }
 
-type envelopeCursor struct {
-	data []byte
-	at   int
-}
-
-func (c *envelopeCursor) fixed(id byte, typ thrift.TType, n int) ([]byte, bool) {
-	if len(c.data)-c.at < n+3 || c.data[c.at] != byte(typ) || c.data[c.at+1] != 0 || c.data[c.at+2] != id {
-		return nil, false
-	}
-	c.at += 3
-	v := c.data[c.at : c.at+n : c.at+n]
-	c.at += n
-	return v, true
-}
-func (c *envelopeCursor) blob(id byte) ([]byte, bool) {
-	length, ok := c.fixed(id, thrift.STRING, 4)
-	if !ok {
-		return nil, false
-	}
-	n := uint64(binary.BigEndian.Uint32(length))
-	if n > uint64(len(c.data)-c.at) {
-		return nil, false
-	}
-	v := c.data[c.at : c.at+int(n) : c.at+int(n)]
-	c.at += int(n)
-	return v, true
-}
-
 // DecodeReplyEnvelopeView validates the whole envelope shape and required
 // fields before exposing borrowed data. Canonical writer order needs no scratch
 // copy or string allocation; reordered/extended frames use the full decoder.
@@ -97,57 +68,30 @@ func DecodeReplyEnvelopeView(data []byte, limit int) (ReplyEnvelopeView, error) 
 }
 
 func canonicalReplyView(data []byte) (ReplyEnvelopeView, error, bool) {
-	c := envelopeCursor{data: data, at: len(binaryEnvelopePrefix)}
+	c := binread.Cursor{Data: data, At: len(binaryEnvelopePrefix)}
 	var v ReplyEnvelopeView
-	version, ok := c.fixed(envelopeFieldVersion, thrift.I32, 4)
-	if !ok {
+	version := c.Int32(envelopeFieldVersion)
+	kind := c.Blob(envelopeFieldKind)
+	v.Service = c.Blob(envelopeFieldService)
+	v.Method = c.Blob(envelopeFieldMethod)
+	v.ID = c.Blob(envelopeFieldID)
+	v.Session = c.Blob(envelopeFieldSession)
+	v.Deadline = c.Int64(envelopeFieldDeadline)
+	v.Topic = c.Blob(envelopeFieldReplyTopic)
+	v.Partition = c.Int32(envelopeFieldReplyPartition)
+	v.Payload = c.Blob(envelopeFieldPayload)
+	if c.Failed {
 		return v, nil, false
 	}
-	kind, ok := c.blob(envelopeFieldKind)
-	if !ok {
-		return v, nil, false
-	}
-	if v.Service, ok = c.blob(envelopeFieldService); !ok {
-		return v, nil, false
-	}
-	if v.Method, ok = c.blob(envelopeFieldMethod); !ok {
-		return v, nil, false
-	}
-	if v.ID, ok = c.blob(envelopeFieldID); !ok {
-		return v, nil, false
-	}
-	if v.Session, ok = c.blob(envelopeFieldSession); !ok {
-		return v, nil, false
-	}
-	deadline, ok := c.fixed(envelopeFieldDeadline, thrift.I64, 8)
-	if !ok {
-		return v, nil, false
-	}
-	v.Deadline = int64(binary.BigEndian.Uint64(deadline))
-	if v.Topic, ok = c.blob(envelopeFieldReplyTopic); !ok {
-		return v, nil, false
-	}
-	partition, ok := c.fixed(envelopeFieldReplyPartition, thrift.I32, 4)
-	if !ok {
-		return v, nil, false
-	}
-	v.Partition = int32(binary.BigEndian.Uint32(partition))
-	if v.Payload, ok = c.blob(envelopeFieldPayload); !ok {
-		return v, nil, false
-	}
-	if c.at < len(data) && data[c.at] != 0 {
-		if v.ErrorCode, ok = c.blob(envelopeFieldErrorCode); !ok {
-			return v, nil, false
-		}
-		if v.ErrorMessage, ok = c.blob(envelopeFieldErrorMessage); !ok {
-			return v, nil, false
-		}
+	if c.At < len(data) && data[c.At] != 0 {
+		v.ErrorCode = c.Blob(envelopeFieldErrorCode)
+		v.ErrorMessage = c.Blob(envelopeFieldErrorMessage)
 		v.HasError = true
 	}
-	if len(data)-c.at != 1 || data[c.at] != 0 {
+	if !c.Done() {
 		return v, nil, false
 	}
-	if int32(binary.BigEndian.Uint32(version)) != ProtocolVersion || !bytes.Equal(kind, []byte("response")) || len(v.Service) == 0 || len(v.Method) == 0 || len(v.ID) == 0 || len(v.Session) == 0 {
+	if version != ProtocolVersion || !bytes.Equal(kind, []byte("response")) || len(v.Service) == 0 || len(v.Method) == 0 || len(v.ID) == 0 || len(v.Session) == 0 {
 		return ReplyEnvelopeView{}, fmt.Errorf("courier: invalid reply fields or version"), true
 	}
 	return v, nil, true

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/nextpkg/courier/internal/binread"
 	"github.com/nextpkg/courier/internal/binwrite"
 )
 
@@ -54,6 +55,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 	if _, err := p.ReadStructBegin(ctx); err != nil {
 		return Envelope{}, err
 	}
+	r := binread.Reader{Protocol: p, Context: ctx}
 	var seen uint16
 	for {
 		_, ty, id, err := p.ReadFieldBegin(ctx)
@@ -75,100 +77,67 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 			if ty != thrift.I32 {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Version")
 			}
-			v, err := p.ReadI32(ctx)
-			if err != nil {
-				return Envelope{}, err
-			}
+			v := r.Int32()
 			e.Version = int(v)
 		case envelopeFieldKind:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Kind")
 			}
-			v, err := p.ReadString(ctx)
-			if err != nil {
-				return Envelope{}, err
-			}
+			v := r.String()
 			e.Kind = v
 		case envelopeFieldService:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Service")
 			}
-			v, err := p.ReadString(ctx)
-			if err != nil {
-				return Envelope{}, err
-			}
+			v := r.String()
 			e.Service = v
 		case envelopeFieldMethod:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Method")
 			}
-			v, err := p.ReadString(ctx)
-			if err != nil {
-				return Envelope{}, err
-			}
+			v := r.String()
 			e.Method = v
 		case envelopeFieldID:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for ID")
 			}
-			v, err := p.ReadString(ctx)
-			if err != nil {
-				return Envelope{}, err
-			}
+			v := r.String()
 			e.ID = v
 		case envelopeFieldSession:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Session")
 			}
-			v, err := p.ReadString(ctx)
-			if err != nil {
-				return Envelope{}, err
-			}
+			v := r.String()
 			e.Session = v
 		case envelopeFieldDeadline:
 			if ty != thrift.I64 {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Deadline")
 			}
-			v, err := p.ReadI64(ctx)
-			if err != nil {
-				return Envelope{}, err
-			}
+			v := r.Int64()
 			e.Deadline = v
 		case envelopeFieldReplyTopic:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for ReplyTopic")
 			}
-			v, err := p.ReadString(ctx)
-			if err != nil {
-				return Envelope{}, err
-			}
+			v := r.String()
 			e.Reply.Topic = v
 		case envelopeFieldReplyPartition:
 			if ty != thrift.I32 {
 				return Envelope{}, fmt.Errorf("courier: invalid type for ReplyPartition")
 			}
-			v, err := p.ReadI32(ctx)
-			if err != nil {
-				return Envelope{}, err
-			}
+			v := r.Int32()
 			e.Reply.Partition = v
 		case envelopeFieldPayload:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for Payload")
 			}
-			v, err := p.ReadBinary(ctx)
-			if err != nil {
-				return Envelope{}, err
-			}
+			v := r.Binary()
 			e.Payload = v
 		case envelopeFieldErrorCode:
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for ErrorCode")
 			}
-			v, err := p.ReadString(ctx)
-			if err != nil {
-				return Envelope{}, err
-			}
+			v := r.String()
 			if e.Error == nil {
 				e.Error = &RPCError{}
 			}
@@ -177,10 +146,7 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 			if ty != thrift.STRING {
 				return Envelope{}, fmt.Errorf("courier: invalid type for ErrorMessage")
 			}
-			v, err := p.ReadString(ctx)
-			if err != nil {
-				return Envelope{}, err
-			}
+			v := r.String()
 			if e.Error == nil {
 				e.Error = &RPCError{}
 			}
@@ -189,6 +155,9 @@ func decodeBinaryEnvelope(data []byte, limit int) (Envelope, error) {
 			if err := p.Skip(ctx, ty); err != nil {
 				return Envelope{}, err
 			}
+		}
+		if r.Err != nil {
+			return Envelope{}, r.Err
 		}
 		if err := p.ReadFieldEnd(ctx); err != nil {
 			return Envelope{}, err
