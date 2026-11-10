@@ -432,32 +432,20 @@ func (t *Transport) Send(ctx context.Context, service string, reply courier.Rout
 	if e.Kind != "request" || e.Service != service || e.Reply != reply || !t.validReply(reply) {
 		return fmt.Errorf("kafka: invalid request route")
 	}
-	topic, err := t.RequestTopic(service)
+	originalPartition := e.Reply.Partition
+	topic, err := t.requestRoute(ctx, &e)
 	if err != nil {
 		return err
 	}
-	if _, err = t.partitions(ctx, topic); err != nil {
-		return err
+	if e.Reply.Partition != originalPartition {
+		data, err = courier.EncodeEnvelope(e, t.opts.MaxFrameBytes)
+		if err != nil {
+			return err
+		}
 	}
-	var headers []kgo.RecordHeader
-	if t.router != nil {
-		parts, err := t.partitions(ctx, t.opts.ReplyTopic)
-		if err != nil {
-			return err
-		}
-		partition := parts[int(hash(e.ID))%len(parts)]
-		if partition != e.Reply.Partition {
-			e.Reply.Partition = partition
-			data, err = courier.EncodeEnvelope(e, t.opts.MaxFrameBytes)
-			if err != nil {
-				return err
-			}
-		}
-		h, err := t.router.routeHeader(e)
-		if err != nil {
-			return err
-		}
-		headers = []kgo.RecordHeader{h}
+	headers, err := t.requestHeaders(e)
+	if err != nil {
+		return err
 	}
 	return t.publish(ctx, &kgo.Record{Topic: topic, Partition: -1, Key: []byte(e.ID), Value: append([]byte(nil), data...), Headers: headers})
 }
@@ -484,31 +472,17 @@ func (t *Transport) PrepareRequest(ctx context.Context, e courier.Envelope, limi
 	if e.Version != courier.ProtocolVersion || e.Kind != "request" || e.ID == "" || e.Session == "" || e.Service == "" || e.Method == "" || !t.validReply(e.Reply) {
 		return nil, fmt.Errorf("kafka: invalid request envelope")
 	}
-	topic, err := t.RequestTopic(e.Service)
+	topic, err := t.requestRoute(ctx, &e)
 	if err != nil {
 		return nil, err
-	}
-	if _, err = t.partitions(ctx, topic); err != nil {
-		return nil, err
-	}
-	if t.router != nil {
-		parts, err := t.partitions(ctx, t.opts.ReplyTopic)
-		if err != nil {
-			return nil, err
-		}
-		e.Reply.Partition = parts[int(hash(e.ID))%len(parts)]
 	}
 	data, err := courier.EncodeEnvelope(e, limit)
 	if err != nil {
 		return nil, err
 	}
-	var headers []kgo.RecordHeader
-	if t.router != nil {
-		h, err := t.router.routeHeader(e)
-		if err != nil {
-			return nil, err
-		}
-		headers = []kgo.RecordHeader{h}
+	headers, err := t.requestHeaders(e)
+	if err != nil {
+		return nil, err
 	}
 	return &preparedRequest{transport: t, topic: topic, key: []byte(e.ID), value: data, headers: headers}, nil
 }
@@ -604,4 +578,33 @@ func fatalFetch(err error) bool {
 	}
 	var network net.Error
 	return !errors.As(err, &network) && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+// requestRoute owns the routing rules shared by raw and prepared requests.
+func (t *Transport) requestRoute(ctx context.Context, e *courier.Envelope) (string, error) {
+	topic, err := t.RequestTopic(e.Service)
+	if err != nil {
+		return "", err
+	}
+	if _, err = t.partitions(ctx, topic); err != nil {
+		return "", err
+	}
+	if t.router != nil {
+		parts, err := t.partitions(ctx, t.opts.ReplyTopic)
+		if err != nil {
+			return "", err
+		}
+		e.Reply.Partition = parts[int(hash(e.ID))%len(parts)]
+	}
+	return topic, nil
+}
+func (t *Transport) requestHeaders(e courier.Envelope) ([]kgo.RecordHeader, error) {
+	if t.router == nil {
+		return nil, nil
+	}
+	h, err := t.router.routeHeader(e)
+	if err != nil {
+		return nil, err
+	}
+	return []kgo.RecordHeader{h}, nil
 }

@@ -276,12 +276,7 @@ func TestKafkaHAServerCrash(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			marker := "entered"
-			if stage == "after" {
-				marker = "effect"
-			}
-			path := filepath.Join(dir, fmt.Sprintf("%s-%d-crash", marker, child.cmd.Process.Pid))
-			testcheck.WaitFor(t, 5*time.Second, func() bool { _, err := os.Stat(path); return err == nil }, "crash point not reached")
+			waitHACrashPoint(t, child, dir, stage, 5*time.Second)
 			start := time.Now()
 			child.stop(t, true)
 			replacement := startHAProcess(t, opts.Prefix, dir, "server", "")
@@ -289,10 +284,7 @@ func TestKafkaHAServerCrash(t *testing.T) {
 			if err != nil || v == nil || v.ID != "crash" || v.Values[3] != int64(replacement.cmd.Process.Pid) {
 				t.Fatalf("recovery=%v %v", v, err)
 			}
-			effects, err := filepath.Glob(filepath.Join(dir, "effect-*-crash"))
-			if err != nil {
-				t.Fatal(err)
-			}
+			effects := haEffects(t, dir)
 			want := 1
 			if stage == "after" {
 				want = 2
@@ -416,12 +408,7 @@ func TestNATSHAServerCrash(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			marker := "entered"
-			if stage == "after" {
-				marker = "effect"
-			}
-			path := filepath.Join(dir, fmt.Sprintf("%s-%d-crash", marker, child.cmd.Process.Pid))
-			testcheck.WaitFor(t, time.Second, func() bool { _, err := os.Stat(path); return err == nil }, "handler not entered")
+			waitHACrashPoint(t, child, dir, stage, time.Second)
 			start := time.Now()
 			child.stop(t, true)
 			replacement := startHAProcess(t, prefix, dir, "server", "")
@@ -433,10 +420,7 @@ func TestNATSHAServerCrash(t *testing.T) {
 			if _, err = f.Await(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("old call must time out, got %v", err)
 			}
-			effects, err := filepath.Glob(filepath.Join(dir, "effect-*-crash"))
-			if err != nil {
-				t.Fatal(err)
-			}
+			effects := haEffects(t, dir)
 			want := 0
 			if stage == "after" {
 				want = 1
@@ -475,4 +459,20 @@ func TestNATSHAClientCrash(t *testing.T) {
 		t.Fatal("pending leak")
 	}
 	t.Log("SIGKILL client: 10 new calls matched after releasing orphan handler; pending=0")
+}
+
+func waitHACrashPoint(t *testing.T, child *haProcess, dir, stage string, timeout time.Duration) {
+	t.Helper()
+	marker := "entered"
+	if stage == "after" {
+		marker = "effect"
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%s-%d-crash", marker, child.cmd.Process.Pid))
+	testcheck.WaitFor(t, timeout, func() bool { _, err := os.Stat(path); return err == nil }, "crash point not reached")
+}
+func haEffects(t *testing.T, dir string) []string {
+	t.Helper()
+	effects, err := filepath.Glob(filepath.Join(dir, "effect-*-crash"))
+	require.NoError(t, err)
+	return effects
 }

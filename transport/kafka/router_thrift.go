@@ -4,13 +4,10 @@ package kafka
 // existing envelope, delivery statuses and retry/commit path.
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/nextpkg/courier/internal/binwrite"
 	"github.com/nextpkg/courier/internal/reuse"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
-	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -104,35 +101,11 @@ func (s *rpcPeer) handle(c *rpcConn) {
 		if (name != "Forward" && name != "ForwardBatch") || kind != thrift.CALL {
 			return
 		}
-		if _, e = c.p.ReadStructBegin(ctx); e != nil {
-			return
-		}
-		fields := map[int16][]byte{}
-		for {
-			_, typ, id, err := c.p.ReadFieldBegin(ctx)
-			if err != nil {
-				return
-			}
-			if typ == thrift.STOP {
-				break
-			}
-			if typ != thrift.STRING || id < forwardRouteFieldID || id > forwardDataFieldID {
-				return
-			}
-			value, err := readFramedBinary(ctx, c.p, s.r.batchLimit()+4096)
-			if err != nil {
-				return
-			}
-			fields[id] = value
-			if c.p.ReadFieldEnd(ctx) != nil {
-				return
-			}
-		}
-		if c.p.ReadStructEnd(ctx) != nil || c.p.ReadMessageEnd(ctx) != nil {
+		hdr, data, err := readForwardArgs(ctx, c.p, s.r.batchLimit()+4096)
+		if err != nil {
 			return
 		}
 		status := http.StatusBadRequest
-		hdr, data := fields[forwardRouteFieldID], fields[forwardDataFieldID]
 		var batchResults []byte
 		if name == "ForwardBatch" {
 			status, batchResults = s.r.deliverBinaryBatch(data)
@@ -160,32 +133,6 @@ func (s *rpcPeer) handle(c *rpcConn) {
 			return
 		}
 	}
-}
-
-// readFramedBinary allocates once after checking the declared field length
-// against both the message limit and the bytes already buffered in this frame.
-// The returned bytes remain independently owned after the next frame is read.
-func readFramedBinary(ctx context.Context, p *thrift.TBinaryProtocol, limit int64) ([]byte, error) {
-	size, err := p.ReadI32(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if size < 0 {
-		return nil, thrift.NewTProtocolExceptionWithType(thrift.NEGATIVE_SIZE, fmt.Errorf("negative binary field size"))
-	}
-	if int64(size) > limit {
-		return nil, thrift.NewTProtocolExceptionWithType(thrift.SIZE_LIMIT, fmt.Errorf("binary field exceeds message limit"))
-	}
-	frame, ok := p.Transport().(*thrift.TFramedTransport)
-	if !ok {
-		return nil, fmt.Errorf("binary field requires framed transport")
-	}
-	if uint64(size) > frame.RemainingBytes() {
-		return nil, thrift.NewTProtocolException(io.ErrUnexpectedEOF)
-	}
-	value := make([]byte, int(size))
-	_, err = io.ReadFull(frame, value)
-	return value, thrift.NewTProtocolException(err)
 }
 
 type rpcResult struct {
@@ -266,82 +213,10 @@ func (s *rpcPeer) forward(ctx context.Context, host, method string, route, body 
 	if err = p.Flush(ctx); err != nil {
 		return nil, err
 	}
-	name, kind, seq, err := p.ReadMessageBegin(ctx)
+	result, err := readForwardResponse(ctx, p, method)
 	if err != nil {
-		return nil, err
-	}
-	if name != method || kind != thrift.REPLY || seq != 1 {
-		return nil, fmt.Errorf("invalid RPC response")
-	}
-	if _, err = p.ReadStructBegin(ctx); err != nil {
-		return nil, err
-	}
-	_, typ, id, err := p.ReadFieldBegin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if id != forwardSuccessFieldID {
-		return nil, fmt.Errorf("invalid result field")
-	}
-	var status int32
-	var batchResults []byte
-	if method == "ForwardBatch" {
-		if typ != thrift.STRING {
-			return nil, fmt.Errorf("invalid batch result")
-		}
-		result, e := p.ReadBinary(ctx)
-		if e != nil {
-			return nil, e
-		}
-		if len(result) < 4 {
-			return nil, fmt.Errorf("missing batch status")
-		}
-		status = int32(binary.BigEndian.Uint32(result))
-		batchResults = result[4:]
-	} else {
-		if typ != thrift.I32 {
-			return nil, fmt.Errorf("invalid result")
-		}
-		status, err = p.ReadI32(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if err = p.ReadFieldEnd(ctx); err != nil {
-		return nil, err
-	}
-	_, typ, _, err = p.ReadFieldBegin(ctx)
-	if err != nil || typ != thrift.STOP {
-		return nil, fmt.Errorf("invalid result end")
-	}
-	if err = p.ReadStructEnd(ctx); err != nil {
-		return nil, err
-	}
-	if err = p.ReadMessageEnd(ctx); err != nil {
 		return nil, err
 	}
 	ok = ctx.Err() == nil
-	return &rpcResult{status: int(status), body: batchResults}, nil
-}
-
-// writeForwardArgs writes only the argument struct; message framing and I/O
-// completion stay with the connection owner.
-func writeForwardArgs(ctx context.Context, p *thrift.TBinaryProtocol, route, body []byte) error {
-	w := binwrite.Writer{Protocol: p, Context: ctx}
-	w.BinaryField(forwardRouteFieldID, route)
-	w.BinaryField(forwardDataFieldID, body)
-	w.Stop()
-	return w.Err
-}
-func writeForwardResult(ctx context.Context, p *thrift.TBinaryProtocol, batch bool, status int, results []byte) error {
-	w := binwrite.Writer{Protocol: p, Context: ctx}
-	if batch {
-		result := binary.BigEndian.AppendUint32(make([]byte, 0, 4+len(results)), uint32(status))
-		result = append(result, results...)
-		w.BinaryField(forwardSuccessFieldID, result)
-	} else {
-		w.Int32Field(forwardSuccessFieldID, int32(status))
-	}
-	w.Stop()
-	return w.Err
+	return result, nil
 }
