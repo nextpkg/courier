@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
+	"github.com/stretchr/testify/require"
 	"net"
 	"testing"
 )
@@ -12,24 +13,13 @@ func TestThriftForwardUnsignedIdentityReplayAndClose(t *testing.T) {
 	r.inbound = make(chan struct{}, 2)
 	calls := 0
 	in, e := r.openInbox(context.Background(), f.Session, func([]byte) { calls++ })
-	if e != nil {
-		t.Fatal(e)
-	}
+	require.NoError(t, e)
 	defer func() { _ = in.Close(context.Background()) }()
-	ln, e := net.Listen("tcp", "127.0.0.1:0")
-	if e != nil {
-		t.Fatal(e)
-	}
-	peer := newRPCPeer(r, ln)
-	done := make(chan struct{})
-	go func() { _ = peer.serve(ln); close(done) }()
-	defer func() { peer.close(); <-done }()
+	peer, ln, done := startTestRPCPeer(t, r)
 	send := func() int {
 		hdr, _ := wire.EncodeRoute(f)
 		result, err := peer.forward(context.Background(), ln.Addr().String(), "Forward", hdr, b, int64(r.t.opts.MaxFrameBytes))
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		return result.status
 	}
 	if s := send(); s != 204 {
@@ -50,4 +40,16 @@ func TestThriftForwardUnsignedIdentityReplayAndClose(t *testing.T) {
 	if _, err := peer.forward(context.Background(), ln.Addr().String(), "Forward", nil, b, int64(r.t.opts.MaxFrameBytes)); err == nil {
 		t.Fatal("closed peer accepted")
 	}
+}
+
+// startTestRPCPeer owns the listener and joins the serving goroutine on cleanup.
+func startTestRPCPeer(t *testing.T, r *replyRouter) (*rpcPeer, net.Listener, <-chan struct{}) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	peer := newRPCPeer(r, ln)
+	done := make(chan struct{})
+	go func() { _ = peer.serve(ln); close(done) }()
+	t.Cleanup(func() { peer.close(); <-done })
+	return peer, ln, done
 }

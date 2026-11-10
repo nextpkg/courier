@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"github.com/stretchr/testify/require"
-	"net"
 	"reflect"
 	"testing"
 )
@@ -14,19 +13,10 @@ func TestBinaryBatchWireUnsignedPartialReplay(t *testing.T) {
 	r.inbound = make(chan struct{}, 2)
 	calls := 0
 	in, e := r.openInbox(context.Background(), f.Session, func([]byte) { calls++ })
-	if e != nil {
-		t.Fatal(e)
-	}
+	require.NoError(t, e)
 	defer func() { _ = in.Close(context.Background()) }()
-	ln, e := net.Listen("tcp", "127.0.0.1:0")
-	if e != nil {
-		t.Fatal(e)
-	}
-	peer := newRPCPeer(r, ln)
+	peer, ln, _ := startTestRPCPeer(t, r)
 	r.rpc = peer
-	done := make(chan struct{})
-	go func() { _ = peer.serve(ln); close(done) }()
-	defer func() { peer.close(); <-done }()
 	msgs := []wire.BatchMessage{{Instance: f.Instance, Expires: f.Expires, Data: b}, {Instance: "old", Expires: f.Expires, Data: b}, {Instance: "", Expires: f.Expires, Data: b}, {Instance: f.Instance, Expires: f.Expires, Data: b}}
 	endpoint := "http://" + ln.Addr().String()
 	if got := r.sendBatch(endpoint, msgs); !reflect.DeepEqual(got, []int{204, 409, 400, 204}) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"testing"
 	"time"
@@ -15,9 +16,7 @@ func TestLocalForwardDeadlineAndCancellation(t *testing.T) {
 			r, f, b := routerFixture(t)
 			calls := 0
 			in, err := r.openInbox(context.Background(), f.Session, func([]byte) { calls++ })
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			defer func() { _ = in.Close(context.Background()) }()
 			ctx := context.Background()
 			switch name {

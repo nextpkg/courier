@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
@@ -33,9 +34,7 @@ func TestReadFramedBinaryOwnershipAndBounds(t *testing.T) {
 				t.Fatalf("first read: %v", err)
 			}
 			next, err := readFramedBinary(ctx, p, int64(size))
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			clear(next)
 			if !bytes.Equal(got, want) {
 				t.Fatal("next frame overwrote retained bytes")
