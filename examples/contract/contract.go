@@ -12,6 +12,7 @@ import (
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/stretchr/testify/require"
 )
 
 // Factory supplies independent endpoints sharing one broker namespace. Cleanup
@@ -24,17 +25,15 @@ func closeContext() (context.Context, context.CancelFunc) {
 func server(t *testing.T, f Factory, orders bool, r *handlers.Recorder, max int) *courier.Server {
 	t.Helper()
 	s, err := courier.NewServer(f(t), courier.ServerOptions{MaxConcurrent: max})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if orders {
 		err = demo.RegisterOrders(s, &handlers.Orders{Recorder: r})
 	} else {
 		err = demo.RegisterInventory(s, &handlers.Inventory{Recorder: r})
 	}
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if err = s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -50,9 +49,8 @@ func server(t *testing.T, f Factory, orders bool, r *handlers.Recorder, max int)
 func client(t *testing.T, f Factory, max int) *courier.Client {
 	t.Helper()
 	c, err := courier.NewClient(context.Background(), f(t), courier.ClientOptions{MaxInFlight: max, DefaultTimeout: 5 * time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	t.Cleanup(func() {
 		ctx, cancel := closeContext()
 		defer cancel()

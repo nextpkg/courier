@@ -1,4 +1,0 @@
-calls,calls_per_second,completion_p95_ms,elapsed_ms,matched_payload_bytes,matched_records,read_amplification,read_payload_bytes,read_records,reply_partitions,sessions
-64,129.89035934472344,491.898,492,21632,64,1,21632,64,1,1
-64,60.61366360289158,1054.978,1055,21632,64,4,86528,256,1,4
-64,62.332377766294854,1026.052,1026,21632,64,8,173056,512,1,8

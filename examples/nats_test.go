@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/nextpkg/courier/internal/testcheck"
 	"io"
 	"os"
 	"os/exec"
@@ -17,12 +18,13 @@ import (
 	"testing"
 	"time"
 
+	sdk "github.com/nats-io/nats.go"
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/contract"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
 	transport "github.com/nextpkg/courier/transport/nats"
-	sdk "github.com/nats-io/nats.go"
+	"github.com/stretchr/testify/require"
 )
 
 func natsURL(t *testing.T) string {
@@ -71,10 +73,9 @@ func TestNATSNoRespondersAndConnectionClose(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	c, err := courier.NewClient(ctx, tr, courier.ClientOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeTestResource(t, c)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, c)
 	_, err = demo.NewOrdersAsyncClient(c).Get(ctx, "absent", 0)
 	if !errors.Is(err, courier.ErrNoResponders) {
 		t.Fatalf("no responders: %v", err)
@@ -110,12 +111,12 @@ func TestNATSChild(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		defer closeTestResource(t, tr)
+		defer testcheck.Close(t, tr)
 		s, err := courier.NewServer(tr, courier.ServerOptions{MaxConcurrent: 64})
 		if err != nil {
 			return err
 		}
-		defer closeTestResource(t, s)
+		defer testcheck.Close(t, s)
 		switch role {
 		case "orders":
 			err = demo.RegisterOrders(s, &handlers.Orders{})
@@ -151,13 +152,11 @@ func TestNATSCrossProcess(t *testing.T) {
 		cmd.Env = append(os.Environ(), "NATS_URL="+url, "COURIER_CHILD_PREFIX="+prefix, "COURIER_CHILD_ROLE="+role)
 		cmd.Stderr = os.Stderr
 		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		stdin, err := cmd.StdinPipe()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		if err = cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
@@ -182,9 +181,8 @@ func TestNATSCrossProcess(t *testing.T) {
 	var clients []*courier.Client
 	for i := 0; i < 3; i++ {
 		c, err := courier.NewClient(ctx, natsFactory(url, prefix)(t), courier.ClientOptions{MaxInFlight: 256})
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		clients = append(clients, c)
 		t.Cleanup(func() { _ = c.Close(context.Background()) })
 	}
@@ -224,9 +222,8 @@ func TestNATSCrossProcess(t *testing.T) {
 
 func TestNATSNativeOptionsAndNamespaces(t *testing.T) {
 	conn, err := sdk.Connect(natsURL(t), sdk.Name("courier-options-test"), sdk.ReconnectBufSize(-1))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	defer conn.Close()
 	if conn.Opts.Name != "courier-options-test" || conn.Opts.ReconnectBufSize != -1 {
 		t.Fatal("native configuration was not preserved")
@@ -237,26 +234,23 @@ func TestNATSNativeOptionsAndNamespaces(t *testing.T) {
 		}
 	}
 	a, err := transport.New(conn, transport.Options{Prefix: "namespace.a"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeTestResource(t, a)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, a)
 	b, err := transport.New(conn, transport.Options{Prefix: "namespace.b"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeTestResource(t, b)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, b)
 	s, _ := courier.NewServer(a, courier.ServerOptions{})
 	_ = demo.RegisterOrders(s, &handlers.Orders{})
 	if err = s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	defer closeTestResource(t, s)
+	defer testcheck.Close(t, s)
 	c, err := courier.NewClient(context.Background(), b, courier.ClientOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeTestResource(t, c)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, c)
 	_, err = demo.NewOrdersAsyncClient(c).Get(context.Background(), "isolated", 0)
 	if !errors.Is(err, courier.ErrNoResponders) {
 		t.Fatalf("namespace leakage: %v", err)
@@ -271,21 +265,18 @@ func TestNATSNativeOptionsAndNamespaces(t *testing.T) {
 
 func TestNATSRepeatedLifecycle(t *testing.T) {
 	conn, err := sdk.Connect(natsURL(t), sdk.ReconnectBufSize(-1))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	defer conn.Close()
 	baseline := runtime.NumGoroutine()
 	for i := 0; i < 30; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		tr, err := transport.New(conn, transport.Options{Prefix: "courier.lifecycle"})
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		c, err := courier.NewClient(ctx, tr, courier.ClientOptions{})
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		_, err = demo.NewOrdersAsyncClient(c).Get(ctx, "missing", 0)
 		if !errors.Is(err, courier.ErrNoResponders) {
 			t.Fatal(err)
@@ -301,5 +292,5 @@ func TestNATSRepeatedLifecycle(t *testing.T) {
 			t.Fatalf("adapter retained resources: %+v", stats)
 		}
 	}
-	assertGoroutinesReturn(t, baseline)
+	testcheck.AssertGoroutinesReturn(t, baseline)
 }

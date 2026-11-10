@@ -1,10 +1,14 @@
 # Kafka 路由、资源与故障语义
 
-实现使用 franz-go v1.22.2 和匹配的 kmsg v1.15.0；源码在 `transport/kafka`，部署工具在 `examples/brokeradmin`，集成测试位于 `examples/kafka*_test.go`。
+实现使用 franz-go v1.22.2 和匹配的 kmsg v1.15.0；源码在 `transport/kafka`，部署工具在 `examples/brokeradmin`，集成测试位于 `examples/kafka/*_test.go`。
 
 首次运行请先完成 [Kafka 示例](EXAMPLES.md#kafka)；本文供部署与运维查阅，参数的容量选择依据见 [容量规划](KAFKA-CAPACITY.md)。
 
+并发与阶段耗时数据见 [Kafka 网关并发测量](benchmarks/README.md)，其中注明测量版本和条件。
+
 ## 部署模型
+
+下图为默认直读模式；消费组回复网关见后文 Embedded reply routing。
 
 客户端通过服务名调用，不指定服务实例；同服务的多个副本加入同一消费组，由 Kafka 分区分配决定接收请求的副本，分区内的 worker 可并发执行，因此不保证业务完成顺序。
 
@@ -20,7 +24,7 @@ flowchart LR
     R --> C
 ```
 
-图中每个客户端独立读取回复分区并过滤自身回复；请求消费组负责分工，回复 reader 不加入共同消费组。此拓扑对应跨进程测试，验证范围与运行命令见 [测试与性能](TESTING.md)。
+图中独立 Transport 会各自读取回复分区；同一 Transport 内的 Client 共享分区 reader，由 reader 按 session 分发。请求消费组负责分工，回复 reader 不加入共同消费组。跨进程验证范围与运行命令见 [测试与性能](TESTING.md)。
 
 部署顺序为：准备 Broker 及认证 → 创建请求/回复 topic → 配置一致的服务映射和回复分区 → 注册并启动服务端 → 创建客户端并调用；停止时先停止业务接入，再关闭 client/server、适配器，最后由运维决定是否关闭 Broker。
 
@@ -42,11 +46,27 @@ flowchart LR
 ## 共享回复与准备顺序
 
 1. 每个 `courier.Client` 生成独立随机 session，并从配置的 `ReplyPartitions` 选择一个 partition。
-2. 原生 ListOffsets 查询该 partition 当前的具体结束 offset；随后创建从该数字 offset 开始的直接 reader 并验证连接，再返回客户端。
+2. 原生 ListOffsets 查询该 partition 当前的具体结束 offset；首次注册时创建从该位置开始的直接 reader 并验证连接，后续注册复用 reader，但仍按各自注册时的结束 offset 过滤历史记录。
 3. 每个请求记录原始回复 topic、partition、session 和 request ID；服务器按这些字段回复。
-4. Reader 不加入共享消费组。它读到该 partition 的所有后续回复，先过滤 session/route，核心再匹配 request ID、service、method；未知、迟到和重复回复不会匹配其他调用。
+4. 每个 Transport 对每个回复 partition 只有一个 reader，不加入共享消费组；每条记录只解码一次，再按 session/route 分发给本 Transport 的对应 inbox，核心匹配 request ID、service、method。未知、迟到和重复回复不会匹配其他调用。
 
-不能把这些 reader 放到同一个共享消费组，否则回复可能被另一个客户端读走。多个生成的服务客户端应共享同一个 `courier.Client`，这样只有一个 reader；同一进程每创建一个独立 core client 都会增加一个 session/reader。
+不能直接把各实例的 reader 放到同一个共享消费组，否则回复可能被没有对应等待状态的实例读走。多个生成的服务客户端可以共享一个 `courier.Client`；需要独立 Client 生命周期时，也应复用同一个 `*kafka.Transport`，这样同一回复分区仍只读取一次。不同 Transport 不会自动合并，以保持认证、连接、hook 和资源所有权边界。
+
+```go
+tr, err := kafka.New(ctx, opts)
+if err != nil { return err }
+// c1、c2 可以独立关闭；进程退出时再关闭 tr。
+c1, err := courier.NewClient(ctx, tr, clientOptions)
+if err != nil { _ = tr.Close(ctx); return err }
+c2, err := courier.NewClient(ctx, tr, clientOptions)
+if err != nil { _ = c1.Close(ctx); _ = tr.Close(ctx); return err }
+```
+
+关闭 Client 会注销对应 session 并等待其正在执行的回复回调结束，不影响其他 Client；同一 Transport 不允许重复注册活跃 session。reader 在最后一个 Client 关闭后仍保留到 Transport.Close，数量受配置的回复分区数量限制。回复回调应快速返回，避免阻塞同分区其他会话；核心 Client 的回调负责关联结果，不执行用户业务处理。
+
+复用 Transport 也会复用生产者：`PublishBuffers`、`MaxSubscriptions` 等是整个 Transport 的总预算，不是每个 Client 的预算；从多个 Transport 合并时，应按总并发配置容量并保留过载保护，不能期待原来每个 Transport 的缓冲自动累加。
+
+跨进程隔离可静态指定实例 A/B/C 的 `ReplyPartitions` 分别为 `[0]`、`[1]`、`[2]`，并预建相应分区；服务端允许列表配置为 `[0,1,2]`。部署方须保证分区归属不重复，本适配器不提供租约或自动独占分配；仅把所有客户端都配置成 `[0,1,2]` 并不能保证无碰撞。session 过滤仍保留，用于拒绝分区复用后迟到的旧回复。
 
 扩容时保留原 partition，先让服务端允许新增 partition，再让新客户端选择新增 partition。已存在客户端及在途请求保留原地址。不同权限域使用不同的回复 topic/ACL；session 过滤不是数据保密机制，同 partition 的其他 reader 能读取消息内容。
 
@@ -72,7 +92,7 @@ flowchart LR
 | 核心 Server MaxConcurrent | 32 | 每个 server 的 handler 并发；超额返回 overloaded |
 | Workers / Window | 16 / 64 | 每个本地请求 topic 订阅的 worker 数 / 未提交工作数，不是全消费组总额 |
 | PublishBuffers | 256 | 每个 transport 的原生 producer 缓冲记录数；满则 ErrOverloaded |
-| MaxFrameBytes | 1 MiB | 包含外层 JSON/base64；适配器配置允许 512 B–16 MiB |
+| MaxFrameBytes | 1 MiB | 包含外层二进制信封；适配器配置允许 512 B–16 MiB |
 | MaxTopics | 128 | 每个 transport 的有界 topic metadata 项数，包含回复 topic |
 | MaxTopicPartitions | 64 | metadata 检查时允许的每 topic partition 数 |
 | MaxSubscriptions | 128 | 每个 transport 的 inbox + 请求 topic 订阅数 |
@@ -117,3 +137,146 @@ Metadata 已报告 Leader 不代表该分区立即可接受 Produce；新建 top
 ## 按 CPU 选择启动配置
 
 小消息吞吐场景可显式使用 `AutoCapacityProfile()`，在初始化前统一选择客户端发送、服务端处理、窗口和缓冲配置；1 核与 2 核的实测值、使用示例及适用边界见 [容量规划](KAFKA-CAPACITY.md#启动时自动选择配置)。原有默认值不变，不提供运行中的自动扩缩容。
+
+## 显式选择转发协议
+
+`ReplyRouterOptions.ForwardProtocol` 接受 `"http"`（默认）或 `"thrift"`。HTTP 路径支持所配置的 TLS；Thrift 是可信内部网络的明文 framed TCP，要求 http 形式的实例地址和 AllowInsecureHTTP，不能同时配置 TLS。生产适配器不读取 REPLY_MODE；该变量仅由负载/集成测试映射到显式选项。
+
+## Embedded reply routing
+
+`Options.ReplyRouter` enables consumer-group reply routing without a registry or
+an additional broker. All client transports for a routed reply topic must use
+one group. Use a **separate reply topic** from direct
+manual-partition inboxes: mixing the two modes can discard unroutable replies or
+restore read amplification. Existing direct-reader behavior remains the default.
+
+```go
+opts.DynamicReplyPartitions = true // also set on server-only transports
+opts.ReplyRouter = &kafka.ReplyRouterOptions{
+    ListenAddress: "0.0.0.0:8443",
+    AdvertiseURL:  "https://instance-specific-host:8443",
+    Group:         "courier-reply-router",
+    ServerTLS:     serverTLS,    // certificate for this instance-specific hostname
+    ClientTLS:     clientTLS,    // trust configuration for peer certificates
+}
+```
+
+Each advertised endpoint must identify one directly reachable instance, not a
+load-balanced service address. `AllowInsecureHTTP` explicitly permits HTTP for
+trusted private networks/tests. This router targets trusted enterprise-internal
+services and does not authenticate routing metadata or forwarding bodies with HMAC.
+Kafka writers, router endpoints and participating services must belong to that
+trusted deployment. TLS configuration remains available for the HTTP path;
+the Thrift TCP adapter does not implement TLS/mTLS.
+Redirects and environment HTTP proxies are not used. Port zero is supported for
+local tests; `ReplyEndpoint()` returns the selected endpoint. Server-only
+transports do not need a listener: leave `ReplyRouter` nil and enable
+`DynamicReplyPartitions`.
+
+Binary reply routing metadata uses format version 1.
+
+```mermaid
+flowchart LR
+    S[RPC server] --> K[Shared reply topic: 1 to N partitions]
+    K --> G[One consumer group embedded in client processes]
+    G -->|local delivery or HTTP forwarding| O[Origin process and session]
+    O --> C[Pending RPC]
+```
+
+Requests carry routing metadata in Kafka headers, including an instance
+nonce, session, request ID, partition, and expiry. The Kafka server adapter copies
+this metadata to the response; upgrade that adapter too. The consumer validates
+metadata, delivers locally or forwards over reused HTTP connections, and commits
+only contiguous completed offsets. Replies are acknowledged after the target
+callback returns, not merely after queuing a network write. The core Client
+removes completed pending calls; the router additionally suppresses the last
+`DedupEntries` IDs per inbox (default 4096). This bounded cache is not durable
+exactly-once delivery: replay outside the cache is possible, and a restarted
+origin has already lost its pending calls.
+
+A restarted process receives a fresh nonce even if its address/session is reused.
+It rejects old-instance deliveries; forwarding peers cache that terminal result
+in a bounded cache. Missing sessions and expired replies are terminal too.
+Unreachable peers and transient HTTP failures retry until the route deadline,
+bounded by `MaxReplyAge` (default 30s, at most `ProcessingTimeout`). A forwarding
+process stopping before delivery completes leaves the offset uncommitted for
+another group member. Expiry is deliberately terminal and permits the offset to
+advance; it does not report successful delivery to the RPC caller.
+
+The existing `Workers` and `Window` bound concurrent forwarding and fetched
+records. HTTP handlers also bound concurrent deliveries. Dedup caches are bounded
+per inbox, idle pooled connections are bounded globally, and stale-instance
+entries are bounded to 1024. A slow/unreachable destination can still delay a
+partition's contiguous commit and fill the shared window, delaying other assigned
+partitions until expiry. Choose deadlines
+and limits for the workload; optional forwarding batches are described below.
+Callbacks must remain short and must not synchronously close their own inbox.
+
+In routed mode new requests hash their request ID over live partition metadata,
+refreshed every second; existing requests retain their original reply partition.
+Consumers subscribe by topic, discover added partitions and rebalance, starting
+uncommitted partitions at the beginning so discovery does not skip new replies.
+`MaxTopicPartitions` still bounds accepted growth. Expansion is eventual, not an
+instant cutover; producer metadata convergence can cause a bounded retry and
+request re-execution, consistent with the existing at-least-once server contract.
+Kafka topic provisioning/partition increases remain deployment operations.
+
+For graceful process shutdown call `Client.Drain(ctx)` on every owned client
+before `Transport.Close(ctx)`. Drain rejects new calls and waits for admitted
+calls; its deadline aborts remaining calls. Keep the transport and forwarding
+endpoint running until draining completes. Unexpected process death cannot
+recover the origin's in-memory pending calls. Business retries still require
+idempotency.
+
+`Stats().ReplyRecords` counts Kafka reads at the group consumer, while
+`ReplyMatched` counts deliveries at the destination. `RouterStats()` exposes
+completed forwards, expired replies, suppressed duplicates, stale-instance
+replies and retries. Sum across processes to assess read amplification; recovery
+replays can legitimately exceed one read per reply. Throughput, CPU and memory
+benefits depend on whether avoided reads outweigh forwarding costs.
+## Ready-only reply forwarding batches
+
+`ReplyRouterOptions.BatchSize` optionally enables forwarding batches (2–32;
+zero keeps single-reply HTTP requests). Enable it only after all receiving peers
+support `/courier/replies`; there is no automatic fallback to an older receiver.
+Setting it back to zero restores single-reply forwarding without changing topics.
+
+The first ready reply starts immediately. Replies queued for the same endpoint
+while a request is in flight are sent together next, without a batching timer.
+Each endpoint has one active sender by default, or at most two with BatchConcurrency=2; consumer workers bound queued messages.
+A batch is limited by both message count and the aggregate frame-byte budget.
+Slow destinations can still occupy the shared consumer window; this option does
+not provide per-destination fairness.
+
+The receiver returns a status for every reply. Successful deliveries, stale
+instances, expiry and malformed messages retain the single-reply semantics;
+network failures retry within each reply's lifetime. A lost batch response may
+cause replay, so inbox deduplication remains necessary. The existing contiguous
+completion window controls Kafka commits; sending a batch is not itself an ACK.
+`RouterStats.HTTPRequests` and `HTTPMessages` count remote attempts, including
+retries, and expose the observed messages-per-request ratio.
+
+
+### Bounded overlapping reply batches
+
+For a dedicated client transport, the tested high-throughput configuration uses
+`Options.Workers = 128` and `ReplyRouterOptions{BatchSize: 32, BatchConcurrency: 2}`.
+Keep server-side worker tuning independent. `BatchConcurrency` accepts 0/1 for
+serial sending (default) or 2 for at most two batches in flight per endpoint.
+It applies only when BatchSize > 1.
+
+One coordinator removes messages from each endpoint queue. A second send starts
+only when at least BatchSize items are waiting; byte limits and cancellation can
+reduce the actual batch. With no active send, a partial batch starts immediately.
+Results may arrive out of order and are returned through each item's own done
+channel; the existing contiguous completion window still controls Kafka commits.
+The coordinator remains tracked until all sends finish, including cancelled
+waiters. No linger timer or unbounded send queue is introduced.
+
+## 对象复用与关闭
+
+发布完成槽缓存最多 min(PublishBuffers,1024) 个空闲对象，调用方和 SDK 回调各持一个引用；取消仅释放调用方，迟到回调结束后才能清除结果并回池。转发条目遵循相同的等待方/发送方双引用规则，清除消息与 context 后复用。缓存满时交给 GC；公开 Future 不池化，也不调整全局 GC。关闭时解除缓存引用，在途操作保留必要所有权。
+
+## 内部代码边界
+
+`transport/kafka/internal/wire` 负责路由头、转发批次和状态列表的二进制编码、结构校验及编解码缓冲复用，不依赖 Transport 或回复路由器。实例、会话、期限、目标匹配等交付语义，以及身份缓存、批调度、确认和 offset 提交仍由 `kafka` 包管理。

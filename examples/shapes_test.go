@@ -8,7 +8,9 @@ import (
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/gen/shapes"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/nextpkg/courier/internal/testcheck"
 	"github.com/nextpkg/courier/transport/memory"
+	"github.com/stretchr/testify/require"
 	"reflect"
 	"strings"
 	"testing"
@@ -32,24 +34,19 @@ func TestGeneratedVoidBinaryAndContainers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	b, _ := memory.New(memory.Options{})
-	defer closeTestResource(t, b)
+	defer testcheck.Close(t, b)
 	s, _ := courier.NewServer(b, courier.ServerOptions{})
-	defer closeTestResource(t, s)
-	if err := shapes.RegisterShapes(s, shapeHandler{}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Start(ctx); err != nil {
-		t.Fatal(err)
-	}
+	defer testcheck.Close(t, s)
+	require.NoError(t, shapes.RegisterShapes(s, shapeHandler{}))
+	require.NoError(t, s.Start(ctx))
+
 	c, err := courier.NewClient(ctx, b, courier.ClientOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeTestResource(t, c)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, c)
 	api := shapes.NewShapesAsyncClient(c)
-	if err := api.Ping(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, api.Ping(ctx))
+
 	var business *shapes.ShapeError
 	if err := api.Check(ctx, true); !errors.As(err, &business) {
 		t.Fatalf("void exception=%v", err)
@@ -97,10 +94,10 @@ func TestMalformedRequestsNeverExecuteHandler(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			b, _ := memory.New(memory.Options{})
-			defer closeTestResource(t, b)
+			defer testcheck.Close(t, b)
 			r := &handlers.Recorder{}
 			s, _ := courier.NewServer(b, courier.ServerOptions{})
-			defer closeTestResource(t, s)
+			defer testcheck.Close(t, s)
 			_ = demo.RegisterOrders(s, &handlers.Orders{Recorder: r})
 			if err := s.Start(ctx); err != nil {
 				t.Fatal(err)
@@ -112,13 +109,13 @@ func TestMalformedRequestsNeverExecuteHandler(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer closeTestResource(t, inbox)
+			defer testcheck.Close(t, inbox)
 			interceptor := corruptTransport{Transport: b, mutate: func(e *courier.Envelope) { e.Reply = inbox.Route(); e.Session = "corrupt-session"; tc.mutate(e) }}
 			c, err := courier.NewClient(ctx, interceptor, courier.ClientOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer closeTestResource(t, c)
+			defer testcheck.Close(t, c)
 			if _, err = demo.NewOrdersAsyncClient(c).GetAsync(ctx, "bad", 0); err != nil {
 				t.Fatal(err)
 			}
@@ -141,23 +138,21 @@ func TestLargeRequestAndResponse(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	b, _ := memory.New(memory.Options{})
-	defer closeTestResource(t, b)
+	defer testcheck.Close(t, b)
 	s, _ := courier.NewServer(b, courier.ServerOptions{MaxFrameBytes: 600})
-	defer closeTestResource(t, s)
+	defer testcheck.Close(t, s)
 	_ = demo.RegisterOrders(s, &handlers.Orders{})
-	if err := s.Start(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, s.Start(ctx))
+
 	c, err := courier.NewClient(ctx, b, courier.ClientOptions{MaxFrameBytes: 600})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeTestResource(t, c)
+	require.NoError(t, err)
+
+	defer testcheck.Close(t, c)
 	if _, err = demo.NewOrdersAsyncClient(c).GetAsync(ctx, strings.Repeat("x", 1000), 0); !errors.Is(err, courier.ErrTooLarge) {
 		t.Fatalf("request limit=%v", err)
 	}
 	// Repeated IDs fit in the request more cheaply than full returned Item structs.
-	_, err = demo.NewOrdersAsyncClient(c).List(ctx, []string{"one", "two", "three", "four", "five"})
+	_, err = demo.NewOrdersAsyncClient(c).List(ctx, []string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"})
 	var remote *courier.RPCError
 	if !errors.As(err, &remote) || remote.Code != "too_large" {
 		t.Fatalf("response limit=%v", err)

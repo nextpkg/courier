@@ -72,7 +72,21 @@ result, err := client.Get(ctx, "order-42", 0)
 | 业务接口接入 | [接入教程](docs/GETTING-STARTED.md) |
 | 跨进程示例部署 | [NATS / Kafka 示例](docs/EXAMPLES.md) |
 | 原理、调用语义、超时及传输差异 | [架构与传输语义](docs/ARCHITECTURE.md) |
+| 二进制线格式、字段校验与缓冲所有权 | [协议规范](docs/BINARY_ENVELOPE.md) |
 | 依赖版本、模块结构与代码生成 | [依赖与生成工具](docs/DEPENDENCIES.md) |
 | Kafka topic、消费组与故障处理 | [Kafka 路由与资源配置](docs/KAFKA.md) |
-| Kafka 性能数据口径、容量与资源开销 | [容量规划](docs/KAFKA-CAPACITY.md#性能数据口径) |
-| 测试方法、实测性能曲线与复现 | [测试与性能](docs/TESTING.md) |
+| Kafka 并发、worker 与资源取舍 | [容量规划](docs/KAFKA-CAPACITY.md) |
+| 测试分层、运行命令与故障验证 | [测试说明](docs/TESTING.md) |
+| 优化历程、性能图表与测量条件 | [性能优化记录](docs/benchmarks/README.md) |
+
+## Lint
+
+Install [golangci-lint v2.15.0](https://github.com/golangci/golangci-lint/releases/tag/v2.15.0)
+(built with Go 1.27 or newer), then run `./scripts/lint.sh` from the checkout.
+Set `GOLANGCI_LINT` to use a binary outside PATH; the entry point checks its version.
+CI runs the same command. It checks the root, memory, NATS, Kafka and examples
+modules, including tests, first with default tags and then with `integration`.
+Lint analyzes integration code without running it or starting brokers.
+The baseline checks errors, vet diagnostics, ineffective assignments, static
+correctness and simplifications, unused code, and testify usage. Generated code
+is excluded only when it has a standard Go generated-code marker.

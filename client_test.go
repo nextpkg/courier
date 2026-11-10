@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/stretchr/testify/require"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -83,9 +84,8 @@ func newTestClient(t *testing.T, f *fakeTransport, opts ClientOptions) *Client {
 		f.sent = make(chan Envelope, 32)
 	}
 	c, err := NewClient(context.Background(), f, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
@@ -196,9 +196,8 @@ func TestParentCancellation(t *testing.T) {
 	f := &fakeTransport{sent: make(chan Envelope, 1)}
 	parent, cancel := context.WithCancel(context.Background())
 	c, err := NewClient(parent, f, ClientOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	x, _ := c.Submit(context.Background(), "A", "Get", &unit{})
 	next(t, f.sent)
 	cancel()
@@ -220,9 +219,8 @@ func TestConcurrentCloseAndCompletion(t *testing.T) {
 	var calls []*Call
 	for i := 0; i < 24; i++ {
 		x, err := c.Submit(context.Background(), "A", "Get", &unit{})
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		calls = append(calls, x)
 	}
 	var wg sync.WaitGroup
@@ -286,14 +284,51 @@ func TestProtocolBounds(t *testing.T) {
 	_ = op.WriteMessageBegin(ctx, "Get", thrift.REPLY, 0)
 	_ = (&unit{}).Write(ctx, op)
 	_ = op.WriteMessageEnd(ctx)
-	if err := decodeResult(ctx, "Get", out.Bytes(), &unit{}, 1024); err != nil {
+	require.NoError(t, decodeResult(ctx, "Get", out.Bytes(), &unit{}, 1024))
+	require.Error(t, decodeResult(ctx, "Other", out.Bytes(), &unit{}, 1024),
+		"wrong method accepted")
+
+	bad := append(append([]byte(nil), out.Bytes()...), 0)
+	require.Error(t, decodeResult(ctx, "Get", bad, &unit{}, 1024),
+		"trailing bytes accepted")
+
+}
+
+func TestClientDrainWaitsAndRejectsNewCalls(t *testing.T) {
+	f := &fakeTransport{sent: make(chan Envelope, 1)}
+	c := newTestClient(t, f, ClientOptions{})
+	call, err := c.Submit(context.Background(), "A", "Get", &unit{})
+	require.NoError(t, err)
+
+	e := <-f.sent
+	done := make(chan error, 1)
+	go func() { done <- c.Drain(context.Background()) }()
+	deadline := time.Now().Add(time.Second)
+	for {
+		c.mu.Lock()
+		closed := c.closed
+		c.mu.Unlock()
+		if closed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("drain did not start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if _, err := c.Submit(context.Background(), "A", "Get", &unit{}); !errors.Is(err, ErrClosed) {
 		t.Fatal(err)
 	}
-	if err := decodeResult(ctx, "Other", out.Bytes(), &unit{}, 1024); err == nil {
-		t.Fatal("wrong method accepted")
+	select {
+	case err := <-done:
+		_ = err // Only completion matters here.
+		t.Fatal("drain returned before pending reply")
+	default:
 	}
-	bad := append(append([]byte(nil), out.Bytes()...), 0)
-	if err := decodeResult(ctx, "Get", bad, &unit{}, 1024); err == nil {
-		t.Fatal("trailing bytes accepted")
+	f.respond(e)
+	if _, err := call.Await(context.Background()); err != nil {
+		t.Fatal(err)
 	}
+	require.NoError(t, <-done)
+
 }

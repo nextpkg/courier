@@ -87,6 +87,19 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.started = true
 	s.ctx, s.cancel = context.WithCancel(ctx)
+	if batch, ok := s.t.(EnvelopeServiceListener); ok {
+		handlers := make(map[string]EnvelopeHandler, len(s.services))
+		for name, p := range s.services {
+			handlers[name] = s.envelopeHandler(name, p)
+		}
+		sub, err := batch.ListenEnvelopeServices(s.ctx, handlers)
+		if err != nil {
+			s.cancel()
+			return err
+		}
+		s.subs = append(s.subs, sub)
+		return nil
+	}
 	if batch, ok := s.t.(ServiceListener); ok {
 		handlers := make(map[string]Handler, len(s.services))
 		for name, p := range s.services {
@@ -155,11 +168,27 @@ func (s *Server) Close(ctx context.Context) error {
 	return err
 }
 func (s *Server) handler(service string, p thrift.TProcessor) Handler {
-	return func(parent context.Context, data []byte) (out []byte, err error) {
+	next := s.envelopeHandler(service, p)
+	return func(parent context.Context, data []byte) ([]byte, error) {
 		e, err := DecodeEnvelope(data, s.opts.MaxFrameBytes)
 		if err != nil {
 			return nil, err
 		}
+		return next(parent, e, len(data))
+	}
+}
+func (s *Server) envelopeHandler(service string, p thrift.TProcessor) EnvelopeHandler {
+	return func(parent context.Context, e Envelope, frameBytes int) (out []byte, err error) {
+		if frameBytes < 0 || frameBytes > s.opts.MaxFrameBytes {
+			return nil, ErrTooLarge
+		}
+		if e.Version != ProtocolVersion || e.ID == "" || e.Session == "" || e.Service == "" || e.Method == "" {
+			return nil, &RPCError{Code: "protocol", Message: "invalid envelope fields or version"}
+		}
+		if err := checkErrorReplyBudget(e, s.opts.MaxFrameBytes); err != nil {
+			return nil, err
+		}
+
 		if e.Kind != "request" {
 			return nil, &RPCError{Code: "protocol", Message: "expected request"}
 		}
@@ -205,6 +234,7 @@ func (s *Server) handler(service string, p thrift.TProcessor) Handler {
 		}
 		// Verify envelope/header consistency before invoking generated dispatch.
 		checkBuf, check := binaryProtocol(e.Payload, s.opts.MaxFrameBytes)
+		defer releaseBinaryProtocol(checkBuf)
 		method, kind, seq, checkErr := check.ReadMessageBegin(ctx)
 		if checkErr != nil || method != e.Method || kind != thrift.CALL || seq != 0 {
 			return fail("protocol", "invalid Thrift call header")
@@ -220,7 +250,9 @@ func (s *Server) handler(service string, p thrift.TProcessor) Handler {
 			return fail("protocol", "trailing request bytes")
 		}
 		in, ip := binaryProtocol(e.Payload, s.opts.MaxFrameBytes)
+		defer releaseBinaryProtocol(in)
 		obuf, op := binaryProtocol(nil, s.opts.MaxFrameBytes)
+		defer releaseBinaryProtocol(obuf)
 		_, processErr := p.Process(ctx, ip, op)
 		if errors.Is(processErr, ErrTooLarge) {
 			return fail("too_large", "response exceeds frame limit")
@@ -234,7 +266,8 @@ func (s *Server) handler(service string, p thrift.TProcessor) Handler {
 		if processErr != nil && obuf.Len() == 0 {
 			return fail("protocol", processErr.Error())
 		}
-		r.Payload = append([]byte(nil), obuf.Bytes()...)
+		// EncodeEnvelope owns its output; the codec buffer stays leased until it returns.
+		r.Payload = obuf.Bytes()
 		out, err = EncodeEnvelope(r, s.opts.MaxFrameBytes)
 		if errors.Is(err, ErrTooLarge) {
 			r.Payload = nil

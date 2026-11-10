@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/apache/thrift/lib/go/thrift"
 )
@@ -11,7 +12,9 @@ import (
 // Override every write fast-path so serialization itself respects the limit.
 type limitedBuffer struct {
 	*thrift.TMemoryBuffer
-	limit int
+	limit    int
+	protocol *thrift.TBinaryProtocol
+	config   thrift.TConfiguration
 }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
@@ -32,11 +35,36 @@ func (b *limitedBuffer) WriteByte(v byte) error {
 	}
 	return b.TMemoryBuffer.WriteByte(v)
 }
+
+// Each operation exclusively leases a codec and its scratch buffer. Encoded
+// results must own their bytes before release; pool reuse is not an async lease.
+var codecBuffers sync.Pool
+
+const maxPooledCodecCapacity = 64 << 10
+
+// Discard oversized scratch storage rather than retaining a rare large frame.
+// The capacity bound applies per entry; sync.Pool is not a global memory limit.
+func releaseBinaryProtocol(b *limitedBuffer) {
+	if b.Cap() > maxPooledCodecCapacity {
+		return
+	}
+	b.Reset()
+	codecBuffers.Put(b)
+}
+
 func binaryProtocol(data []byte, max int) (*limitedBuffer, *thrift.TBinaryProtocol) {
-	b := &limitedBuffer{thrift.NewTMemoryBufferLen(len(data)), max}
+	b, _ := codecBuffers.Get().(*limitedBuffer)
+	if b == nil {
+		b = &limitedBuffer{TMemoryBuffer: thrift.NewTMemoryBufferLen(len(data))}
+	}
+	b.Reset()
+	b.limit = max
+	b.config = thrift.TConfiguration{MaxMessageSize: int32(max), MaxFrameSize: int32(max)}
+	if b.protocol == nil {
+		b.protocol = thrift.NewTBinaryProtocolConf(b, &b.config)
+	}
 	_, _ = b.Write(data)
-	p := thrift.NewTBinaryProtocolConf(b, &thrift.TConfiguration{MaxMessageSize: int32(max), MaxFrameSize: int32(max)})
-	return b, p
+	return b, b.protocol
 }
 
 func encodeCall(ctx context.Context, method string, args thrift.TStruct, max int) ([]byte, error) {
@@ -44,6 +72,7 @@ func encodeCall(ctx context.Context, method string, args thrift.TStruct, max int
 		return nil, fmt.Errorf("courier: nil request")
 	}
 	b, p := binaryProtocol(nil, max)
+	defer releaseBinaryProtocol(b)
 	if err := p.WriteMessageBegin(ctx, method, thrift.CALL, 0); err != nil {
 		return nil, err
 	}
@@ -69,6 +98,7 @@ func nilStruct(v thrift.TStruct) bool {
 
 func decodeResult(ctx context.Context, method string, payload []byte, result thrift.TStruct, max int) error {
 	b, p := binaryProtocol(payload, max)
+	defer releaseBinaryProtocol(b)
 	// Official client validates the method, sequence and application exception.
 	c := thrift.NewTStandardClient(p, p)
 	if err := c.Recv(ctx, p, 0, method, result); err != nil {

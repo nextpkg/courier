@@ -3,14 +3,20 @@ module github.com/nextpkg/courier/examples
 go 1.26.0
 
 require (
+	github.com/apache/thrift v0.25.0
+	github.com/nats-io/nats.go v1.55.0
 	github.com/nextpkg/courier v1.0.0
 	github.com/nextpkg/courier/transport/kafka v1.0.0
 	github.com/nextpkg/courier/transport/memory v1.0.0
 	github.com/nextpkg/courier/transport/nats v1.0.0
-	github.com/apache/thrift v0.25.0
-	github.com/nats-io/nats.go v1.55.0
 	github.com/twmb/franz-go v1.22.2
 	github.com/twmb/franz-go/pkg/kmsg v1.15.0
+)
+
+require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (
@@ -23,6 +29,7 @@ require (
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 )

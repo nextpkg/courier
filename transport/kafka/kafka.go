@@ -25,6 +25,12 @@ import (
 // Options configures Kafka routing, per-transport limits, and SDK connections.
 // Topics must exist before use; New applies defaults to zero-valued optional fields.
 type Options struct {
+
+	// ReplyRouter enables embedded, consumer-group reply forwarding.
+	ReplyRouter *ReplyRouterOptions
+	// DynamicReplyPartitions validates replies against live topic metadata (server side).
+	DynamicReplyPartitions bool
+
 	Brokers                                                               []string
 	Prefix                                                                string
 	RequestTopics                                                         map[string]string
@@ -52,16 +58,23 @@ type metadata struct {
 // Transport owns its Kafka producer, consumers, and reply readers.
 // Close client and server subscriptions before closing the transport.
 type Transport struct {
-	opts                                                                                Options
-	producer                                                                            *kgo.Client
-	ctx                                                                                 context.Context
-	cancel                                                                              context.CancelFunc
-	mu                                                                                  sync.Mutex
-	closed                                                                              bool
-	subs                                                                                map[*subscription]bool
-	topics                                                                              map[string]metadata
-	closeOnce                                                                           sync.Once
-	done                                                                                chan struct{}
+	router *replyRouter
+
+	inboxGate          chan struct{}
+	readers            map[courier.Route]*replyReader
+	opts               Options
+	producer           *kgo.Client
+	publishCompletions *publishCompletionPool
+	ctx                context.Context
+	cancel             context.CancelFunc
+	mu                 sync.Mutex
+	closed             bool
+	subs               map[*subscription]bool
+	topics             map[string]metadata
+	closeOnce          sync.Once
+	done               chan struct{}
+	// Consumption and delivery update these counters concurrently. They are
+	// atomic but not cache-line isolated; atomicity does not remove contention.
 	readRecords, readBytes, matched, handled, responded, committed, restarts, discarded atomic.Uint64
 
 	assignments, revocations, matchedBytes atomic.Uint64
@@ -214,6 +227,9 @@ func normalize(o Options) (Options, error) {
 }
 func (o Options) base() []kgo.Opt {
 	var out []kgo.Opt
+	if o.DynamicReplyPartitions || o.ReplyRouter != nil {
+		out = append(out, kgo.MetadataMaxAge(time.Second))
+	}
 	if o.Dialer != nil {
 		out = append(out, kgo.Dialer(o.Dialer))
 	}
@@ -237,13 +253,14 @@ func New(ctx context.Context, opts Options) (*Transport, error) {
 		return nil, err
 	}
 	pc := o.base()
+	pc = append(pc, kgo.ProducerLinger(0))
 	pc = append(pc, kgo.RecordPartitioner(partitioner{}), kgo.RequiredAcks(kgo.AllISRAcks()), kgo.MaxBufferedRecords(o.PublishBuffers), kgo.MaxBufferedBytes(o.PublishBuffers*(o.MaxFrameBytes+512)), kgo.ProducerBatchMaxBytes(int32(o.MaxFrameBytes+1024)), kgo.RecordDeliveryTimeout(o.OperationTimeout))
 	p, err := kgo.NewClient(pc...)
 	if err != nil {
 		return nil, err
 	}
 	life, cancel := context.WithCancel(context.Background())
-	t := &Transport{opts: o, producer: p, ctx: life, cancel: cancel, subs: map[*subscription]bool{}, topics: map[string]metadata{}, done: make(chan struct{})}
+	t := &Transport{inboxGate: make(chan struct{}, 1), opts: o, producer: p, publishCompletions: newPublishCompletionPool(o.PublishBuffers), ctx: life, cancel: cancel, subs: map[*subscription]bool{}, topics: map[string]metadata{}, done: make(chan struct{})}
 	start, stop := context.WithTimeout(ctx, o.StartupTimeout)
 	defer stop()
 	parts, err := t.partitions(start, o.ReplyTopic)
@@ -265,6 +282,14 @@ func New(ctx context.Context, opts Options) (*Transport, error) {
 		cancel()
 		p.Close()
 		return nil, err
+	}
+	if o.ReplyRouter != nil {
+		t.router, err = t.startReplyRouter(start)
+		if err != nil {
+			cancel()
+			p.Close()
+			return nil, err
+		}
 	}
 	return t, nil
 }
@@ -366,7 +391,7 @@ func (t *Transport) partitions(ctx context.Context, topic string) ([]int32, erro
 	if _, ok := t.topics[topic]; !ok && len(t.topics) >= t.opts.MaxTopics {
 		return nil, courier.ErrOverloaded
 	}
-	t.topics[topic] = metadata{parts, time.Now().Add(30 * time.Second)}
+	t.topics[topic] = metadata{parts, time.Now().Add(t.metadataTTL())}
 	return parts, nil
 }
 
@@ -376,16 +401,18 @@ func (t *Transport) publish(ctx context.Context, r *kgo.Record) error {
 	}
 	t.mu.Lock()
 	closed := t.closed
+	pool := t.publishCompletions
 	t.mu.Unlock()
 	if closed {
 		return courier.ErrClosed
 	}
 	ctx, cancel := context.WithTimeout(ctx, t.opts.OperationTimeout)
 	defer cancel()
-	done := make(chan error, 1)
-	t.producer.TryProduce(ctx, r, func(_ *kgo.Record, err error) { done <- err })
+	completion := pool.acquire()
+	defer completion.release()
+	t.producer.TryProduce(ctx, r, completion.complete)
 	select {
-	case err := <-done:
+	case err := <-completion.ready:
 		if errors.Is(err, kgo.ErrMaxBuffered) {
 			return courier.ErrOverloaded
 		}
@@ -405,18 +432,67 @@ func (t *Transport) Send(ctx context.Context, service string, reply courier.Rout
 	if e.Kind != "request" || e.Service != service || e.Reply != reply || !t.validReply(reply) {
 		return fmt.Errorf("kafka: invalid request route")
 	}
-	topic, err := t.RequestTopic(service)
+	originalPartition := e.Reply.Partition
+	topic, err := t.requestRoute(ctx, &e)
 	if err != nil {
 		return err
 	}
-	if _, err = t.partitions(ctx, topic); err != nil {
+	if e.Reply.Partition != originalPartition {
+		data, err = courier.EncodeEnvelope(e, t.opts.MaxFrameBytes)
+		if err != nil {
+			return err
+		}
+	}
+	headers, err := t.requestHeaders(e)
+	if err != nil {
 		return err
 	}
-	return t.publish(ctx, &kgo.Record{Topic: topic, Partition: -1, Key: []byte(e.ID), Value: append([]byte(nil), data...)})
+	return t.publish(ctx, &kgo.Record{Topic: topic, Partition: -1, Key: []byte(e.ID), Value: append([]byte(nil), data...), Headers: headers})
 }
+
+// Preparation owns immutable encoded bytes. Send hands them to a fresh producer
+// record without decoding/re-encoding; preparedRequest never recycles that storage.
+type preparedRequest struct {
+	transport  *Transport
+	topic      string
+	key, value []byte
+	headers    []kgo.RecordHeader
+}
+
+func (p *preparedRequest) Send(ctx context.Context) error {
+	return p.transport.publish(ctx, &kgo.Record{Topic: p.topic, Partition: -1, Key: p.key, Value: p.value, Headers: p.headers})
+}
+func (t *Transport) PrepareRequest(ctx context.Context, e courier.Envelope, limit int) (courier.PreparedRequest, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if limit > t.opts.MaxFrameBytes {
+		limit = t.opts.MaxFrameBytes
+	}
+	if e.Version != courier.ProtocolVersion || e.Kind != "request" || e.ID == "" || e.Session == "" || e.Service == "" || e.Method == "" || !t.validReply(e.Reply) {
+		return nil, fmt.Errorf("kafka: invalid request envelope")
+	}
+	topic, err := t.requestRoute(ctx, &e)
+	if err != nil {
+		return nil, err
+	}
+	data, err := courier.EncodeEnvelope(e, limit)
+	if err != nil {
+		return nil, err
+	}
+	headers, err := t.requestHeaders(e)
+	if err != nil {
+		return nil, err
+	}
+	return &preparedRequest{transport: t, topic: topic, key: []byte(e.ID), value: data, headers: headers}, nil
+}
+
 func (t *Transport) validReply(r courier.Route) bool {
 	if r.Topic != t.opts.ReplyTopic {
 		return false
+	}
+	if t.opts.DynamicReplyPartitions || t.opts.ReplyRouter != nil {
+		return r.Partition >= 0 && int(r.Partition) < t.opts.MaxTopicPartitions
 	}
 	for _, p := range t.opts.ReplyPartitions {
 		if r.Partition == p {
@@ -440,90 +516,13 @@ func (t *Transport) add(parent context.Context, route courier.Route) (*subscript
 	t.subs[s] = true
 	return s, ctx, nil
 }
-func (t *Transport) OpenInbox(parent context.Context, session string, receive func([]byte)) (courier.Inbox, error) {
-	if session == "" || receive == nil {
-		return nil, fmt.Errorf("kafka: invalid inbox")
-	}
-	route := courier.Route{Topic: t.opts.ReplyTopic, Partition: t.opts.ReplyPartitions[int(hash(session))%len(t.opts.ReplyPartitions)]}
-	s, ctx, err := t.add(parent, route)
-	if err != nil {
-		return nil, err
-	}
-	start, stop := context.WithTimeout(ctx, t.opts.StartupTimeout)
-	defer stop()
-	req := kmsg.NewPtrListOffsetsRequest()
-	q := kmsg.NewListOffsetsRequestTopicPartition()
-	q.Partition = route.Partition
-	q.Timestamp = -1
-	req.Topics = []kmsg.ListOffsetsRequestTopic{{Topic: route.Topic, Partitions: []kmsg.ListOffsetsRequestTopicPartition{q}}}
-	resp, err := req.RequestWith(start, t.producer)
-	offset := int64(-1)
-	if err == nil {
-		for _, topic := range resp.Topics {
-			for _, p := range topic.Partitions {
-				if p.Partition == route.Partition {
-					err = kerr.ErrorForCode(p.ErrorCode)
-					offset = p.Offset
-				}
-			}
-		}
-		if err == nil && offset < 0 {
-			err = fmt.Errorf("kafka: missing reply end offset")
-		}
-	}
-	if err != nil {
-		s.finish()
-		return nil, err
-	}
-	opts := t.opts.base()
-	opts = append(opts, kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{route.Topic: {route.Partition: kgo.NewOffset().At(offset)}}), kgo.ConsumeResetOffset(kgo.NoResetOffset()))
-	reader, err := kgo.NewClient(opts...)
-	if err == nil {
-		err = reader.Ping(start)
-	}
-	if err != nil {
-		if reader != nil {
-			reader.Close()
-		}
-		s.finish()
-		return nil, err
-	}
-	go func() {
-		defer s.finish()
-		defer reader.Close()
-		for ctx.Err() == nil {
-			fetches := reader.PollRecords(ctx, 64)
-			if ctx.Err() != nil {
-				return
-			}
-			fatal := false
-			for _, fe := range fetches.Errors() {
-				t.opts.Logger.Warn("Kafka reply fetch failed", "error", fe.Err)
-				if fatalFetch(fe.Err) {
-					fatal = true
-				}
-			}
-			if fatal {
-				return
-			}
-			fetches.EachRecord(func(r *kgo.Record) {
-				t.readRecords.Add(1)
-				t.readBytes.Add(uint64(len(r.Value)))
-				e, err := courier.DecodeEnvelope(r.Value, t.opts.MaxFrameBytes)
-				if err == nil && e.Kind == "response" && e.Session == session && e.Reply == route {
-					t.matched.Add(1)
-					t.matchedBytes.Add(uint64(len(r.Value)))
-					receive(r.Value)
-				}
-			})
-		}
-	}()
-	return s, nil
-}
 func (t *Transport) Close(ctx context.Context) error {
 	t.closeOnce.Do(func() {
 		t.mu.Lock()
 		t.closed = true
+		// In-flight slots retain their pool until both owners finish. Detaching
+		// drops the closed transport's cache without closing a callback channel.
+		t.publishCompletions = nil
 		t.cancel()
 		subs := make([]*subscription, 0, len(t.subs))
 		for s := range t.subs {
@@ -533,6 +532,18 @@ func (t *Transport) Close(ctx context.Context) error {
 		go func() {
 			for _, s := range subs {
 				_ = s.Close(context.Background())
+			}
+			t.inboxGate <- struct{}{}
+			readers := make([]*replyReader, 0, len(t.readers))
+			for _, r := range t.readers {
+				readers = append(readers, r)
+			}
+			<-t.inboxGate
+			for _, r := range readers {
+				<-r.done
+			}
+			if t.router != nil {
+				t.router.close()
 			}
 			t.producer.Close()
 			close(t.done)
@@ -567,4 +578,33 @@ func fatalFetch(err error) bool {
 	}
 	var network net.Error
 	return !errors.As(err, &network) && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+// requestRoute owns the routing rules shared by raw and prepared requests.
+func (t *Transport) requestRoute(ctx context.Context, e *courier.Envelope) (string, error) {
+	topic, err := t.RequestTopic(e.Service)
+	if err != nil {
+		return "", err
+	}
+	if _, err = t.partitions(ctx, topic); err != nil {
+		return "", err
+	}
+	if t.router != nil {
+		parts, err := t.partitions(ctx, t.opts.ReplyTopic)
+		if err != nil {
+			return "", err
+		}
+		e.Reply.Partition = parts[int(hash(e.ID))%len(parts)]
+	}
+	return topic, nil
+}
+func (t *Transport) requestHeaders(e courier.Envelope) ([]kgo.RecordHeader, error) {
+	if t.router == nil {
+		return nil, nil
+	}
+	h, err := t.router.routeHeader(e)
+	if err != nil {
+		return nil, err
+	}
+	return []kgo.RecordHeader{h}, nil
 }

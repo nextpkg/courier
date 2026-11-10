@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 	"testing"
 	"time"
 
@@ -40,8 +42,8 @@ func TestNATSDrainClose(t *testing.T) {
 			factory := natsFactory(natsURL(t), prefix)
 			h := &drainOrders{&handlers.Orders{}, make(chan struct{}), make(chan struct{}, 40)}
 			defer close(h.release)
-			s := kafkaServer(t, factory(t), h)
-			c := kafkaClient(t, factory(t))
+			s := testutil.Server(t, factory(t), h)
+			c := testutil.Client(t, factory(t))
 			api := demo.NewOrdersAsyncClient(c)
 			var calls []*courier.Future[*demo.Item]
 			for i := 0; i < 40; i++ {
@@ -73,7 +75,7 @@ func TestNATSDrainClose(t *testing.T) {
 				}
 				// Canceled handlers and discarded queued requests need not all receive replies.
 				// Closing the client must terminate every remaining waiter.
-				closeTestResource(t, c)
+				testcheck.Close(t, c)
 				if c.Pending() != 0 {
 					t.Fatal("pending after bounded shutdown")
 				}
