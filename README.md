@@ -77,4 +77,4 @@ result, err := client.Get(ctx, "order-42", 0)
 | Kafka topic、消费组与故障处理 | [Kafka 路由与资源配置](docs/KAFKA.md) |
 | Kafka 并发、worker 与资源取舍 | [容量规划](docs/KAFKA-CAPACITY.md) |
 | 测试分层、运行命令与故障验证 | [测试说明](docs/TESTING.md) |
-| 已测性能结果、条件与版本 | [性能图表](docs/benchmarks/README.md) |
+| 优化历程、性能图表与测量条件 | [性能优化记录](docs/benchmarks/README.md) |
