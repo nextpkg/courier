@@ -1,23 +1,22 @@
 package kafka
 
+import "github.com/nextpkg/courier/internal/reuse"
+
 import "github.com/nextpkg/courier/transport/kafka/internal/wire"
 
 import "context"
 
 const maxCachedForwardItems = 1024
 
-type forwardItemPool struct{ idle chan *forwardItem }
+type forwardItemPool struct{ idle reuse.Cache[*forwardItem] }
 
 func newForwardItemPool(window int) *forwardItemPool {
-	return &forwardItemPool{idle: make(chan *forwardItem, min(window, maxCachedForwardItems))}
+	return &forwardItemPool{idle: make(reuse.Cache[*forwardItem], min(window, maxCachedForwardItems))}
 }
 func (p *forwardItemPool) acquire(ctx context.Context, message wire.BatchMessage) *forwardItem {
 	var item *forwardItem
 	if p != nil {
-		select {
-		case item = <-p.idle:
-		default:
-		}
+		item = p.idle.Take()
 	}
 	if item == nil {
 		item = &forwardItem{done: make(chan int, 1), pool: p}
@@ -44,9 +43,6 @@ func (item *forwardItem) release() {
 	item.message = wire.BatchMessage{}
 	item.ctx = nil
 	if item.pool != nil {
-		select {
-		case item.pool.idle <- item:
-		default:
-		}
+		item.pool.idle.Put(item)
 	}
 }

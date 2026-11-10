@@ -1,13 +1,16 @@
 package kafka
 
 import (
+	"github.com/nextpkg/courier/internal/reuse"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"sync/atomic"
 )
 
 const maxCachedPublishCompletions = 1024
 
-type publishCompletionPool struct{ idle chan *publishCompletion }
+type publishCompletionPool struct {
+	idle reuse.Cache[*publishCompletion]
+}
 type publishCompletion struct {
 	ready chan error
 	refs  atomic.Int32
@@ -17,15 +20,12 @@ type publishCompletion struct {
 // The idle cache is bounded by the producer buffer setting and a small fixed
 // ceiling. Entries are allocated on demand; this is not unused heap ballast.
 func newPublishCompletionPool(buffers int) *publishCompletionPool {
-	return &publishCompletionPool{idle: make(chan *publishCompletion, min(buffers, maxCachedPublishCompletions))}
+	return &publishCompletionPool{idle: make(reuse.Cache[*publishCompletion], min(buffers, maxCachedPublishCompletions))}
 }
 func (p *publishCompletionPool) acquire() *publishCompletion {
 	var c *publishCompletion
 	if p != nil {
-		select {
-		case c = <-p.idle:
-		default:
-		}
+		c = p.idle.Take()
 	}
 	if c == nil {
 		c = &publishCompletion{ready: make(chan error, 1), pool: p}
@@ -50,9 +50,6 @@ func (c *publishCompletion) release() {
 	default:
 	}
 	if c.pool != nil {
-		select {
-		case c.pool.idle <- c:
-		default:
-		}
+		c.pool.idle.Put(c)
 	}
 }

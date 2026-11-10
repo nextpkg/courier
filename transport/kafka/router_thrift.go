@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/nextpkg/courier/internal/binwrite"
+	"github.com/nextpkg/courier/internal/reuse"
 	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"io"
 	"net"
@@ -25,7 +26,7 @@ type rpcConn struct {
 // Each borrowed connection carries one in-flight call; this pool does not
 // multiplex replies. slots bounds occupancy and idle keeps reusable connections.
 type rpcPool struct {
-	idle  chan *rpcConn
+	idle  reuse.Cache[*rpcConn]
 	slots chan struct{}
 }
 type rpcPeer struct {
@@ -194,7 +195,7 @@ func (s *rpcPeer) forward(ctx context.Context, host, method string, route, body 
 	}
 	pool := s.pools[host]
 	if pool == nil {
-		pool = &rpcPool{make(chan *rpcConn, s.r.t.opts.Workers), make(chan struct{}, s.r.t.opts.Workers)}
+		pool = &rpcPool{make(reuse.Cache[*rpcConn], s.r.t.opts.Workers), make(chan struct{}, s.r.t.opts.Workers)}
 		s.pools[host] = pool
 	}
 	s.mu.Unlock()
@@ -204,11 +205,10 @@ func (s *rpcPeer) forward(ctx context.Context, host, method string, route, body 
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	var c *rpcConn
-	select {
-	case c = <-pool.idle:
+	c := pool.idle.Take()
+	if c != nil {
 		s.idleCount.Add(-1)
-	default:
+	} else {
 		raw, err := (&net.Dialer{Timeout: s.r.t.opts.OperationTimeout}).DialContext(ctx, "tcp", host)
 		if err != nil {
 			return nil, err
@@ -221,9 +221,7 @@ func (s *rpcPeer) forward(ctx context.Context, host, method string, route, body 
 	ok := false
 	defer func() {
 		if ok && s.idleCount.Add(1) <= 512 {
-			select {
-			case pool.idle <- c:
-			default:
+			if !pool.idle.Put(c) {
 				s.idleCount.Add(-1)
 				s.drop(c.Conn)
 			}

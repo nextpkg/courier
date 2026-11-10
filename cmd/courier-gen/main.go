@@ -11,9 +11,10 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -141,11 +142,8 @@ func generate(data []byte, core string) ([]byte, error) {
 			}
 		}
 	}
-	names := make([]string, 0, len(byService))
-	for n := range byService {
-		names = append(names, n)
-	}
-	sort.Strings(names)
+	names := slices.AppendSeq(make([]string, 0, len(byService)), maps.Keys(byService))
+	slices.Sort(names)
 	var body strings.Builder
 	for _, name := range names {
 		for _, helper := range []string{"Dial" + name, "Listen" + name} {
@@ -206,11 +204,8 @@ func generate(data []byte, core string) ([]byte, error) {
 			imports[alias] = p
 		}
 	}
-	aliases := make([]string, 0, len(imports))
-	for a := range imports {
-		aliases = append(aliases, a)
-	}
-	sort.Strings(aliases)
+	aliases := slices.AppendSeq(make([]string, 0, len(imports)), maps.Keys(imports))
+	slices.Sort(aliases)
 	fileData := fileTemplateData{Package: f.Name.Name, Body: body.String()}
 	for _, a := range aliases {
 		fileData.Imports = append(fileData.Imports, importTemplateData{Alias: a, Path: imports[a]})
