@@ -2,18 +2,20 @@ package main
 
 import (
 	"context"
-	"github.com/nextpkg/courier"
-	"github.com/nextpkg/courier/examples/gen/demo"
-	"github.com/nextpkg/courier/examples/handlers"
-	transport "github.com/nextpkg/courier/transport/nats"
 	"flag"
 	"fmt"
-	sdk "github.com/nats-io/nats.go"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	sdk "github.com/nats-io/nats.go"
+
+	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/examples/gen/demo"
+	"github.com/nextpkg/courier/examples/handlers"
+	transport "github.com/nextpkg/courier/transport/nats"
 )
 
 func main() {

@@ -2,8 +2,9 @@ package kafka
 
 import (
 	"context"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"testing"
+
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 // BenchmarkPoolLifecycle measures object acquisition, completion and both owners'

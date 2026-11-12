@@ -12,12 +12,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kgo"
+
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/brokeradmin"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
 	transport "github.com/nextpkg/courier/transport/kafka"
-	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 func main() {

@@ -2,12 +2,14 @@ package examples_test
 
 import (
 	"context"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/contract"
 	"github.com/nextpkg/courier/transport/memory"
-	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
 func TestMemoryContract(t *testing.T) {

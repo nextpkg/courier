@@ -1,9 +1,10 @@
 package kafka
 
 import (
-	"github.com/nextpkg/courier"
 	"testing"
 	"time"
+
+	"github.com/nextpkg/courier"
 )
 
 func BenchmarkBinaryRoute(b *testing.B) {

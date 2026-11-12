@@ -3,9 +3,10 @@ package courier
 import (
 	"bytes"
 	"errors"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestBinaryEnvelopeRoundTrip(t *testing.T) {

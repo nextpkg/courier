@@ -2,13 +2,14 @@ package kafka
 
 import (
 	"context"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 func TestParallelBatchOverlapAndCancellation(t *testing.T) {

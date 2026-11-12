@@ -4,13 +4,14 @@ package kafka_test
 
 import (
 	"fmt"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/contract"
 	"github.com/nextpkg/courier/examples/internal/kafkatest"
 	transport "github.com/nextpkg/courier/transport/kafka"
-	"sync"
-	"testing"
-	"time"
 )
 
 func TestKafkaContract(t *testing.T) {

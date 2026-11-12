@@ -11,6 +11,7 @@ import (
 	"time"
 
 	sdk "github.com/nats-io/nats.go"
+
 	"github.com/nextpkg/courier"
 )
 

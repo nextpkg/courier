@@ -3,10 +3,12 @@ package kafka
 import (
 	"bytes"
 	"fmt"
-	codec "github.com/nextpkg/courier/transport/kafka/internal/wire"
-	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	codec "github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 func TestRouteIdentityOwnershipAndBound(t *testing.T) {

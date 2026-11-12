@@ -1,4 +1,17 @@
 version: "2"
+formatters:
+  enable:
+    - gofmt
+    - goimports
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/nextpkg/courier)
+  exclusions:
+    generated: strict
 run:
   timeout: 5m
   tests: true

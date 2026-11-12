@@ -2,10 +2,12 @@ package examples_test
 
 import (
 	"context"
-	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/nextpkg/courier/examples/gen/demo"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/stretchr/testify/require"
+
+	"github.com/nextpkg/courier/examples/gen/demo"
 )
 
 type contextOrders struct {

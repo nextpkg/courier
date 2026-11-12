@@ -4,10 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"github.com/nextpkg/courier"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
-	"github.com/stretchr/testify/require"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +11,12 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 func routerFixture(t *testing.T) (*replyRouter, wire.Route, []byte) {

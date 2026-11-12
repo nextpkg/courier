@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nextpkg/courier"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nextpkg/courier"
 )
 
 func TestRPCPoolsBoundFailedDestinations(t *testing.T) {

@@ -3,11 +3,12 @@ package kafka
 import (
 	"bytes"
 	"context"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"io"
 	"net/http"
 	"net/url"
 	"sync/atomic"
+
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 // The drain may complete after the waiter cancels. Each item owns its buffered

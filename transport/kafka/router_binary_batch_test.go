@@ -2,10 +2,12 @@ package kafka
 
 import (
 	"context"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 func TestBinaryBatchWireUnsignedPartialReplay(t *testing.T) {

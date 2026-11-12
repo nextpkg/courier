@@ -82,9 +82,18 @@ result, err := client.Get(ctx, "order-42", 0)
 ## Lint
 
 Install [golangci-lint v2.15.0](https://github.com/golangci/golangci-lint/releases/tag/v2.15.0)
-(built with Go 1.27 or newer), then run `make lint` from the checkout.
+(built with Go 1.27 or newer), then run `make install-hooks` once per checkout.
+The pre-commit hook runs `make check` before every commit and blocks commits on
+formatting, import or lint errors. Existing hooks are left untouched; if you
+already have a hook, add `make check` to it. Git hooks are local and can be
+bypassed, so CI also runs `make check` for every pull request and main push.
+
+Run `make fmt` to apply gofmt, goimports and gci, then stage the changes again.
+Imports are grouped as standard library, third-party packages and Courier packages.
+`make fmt-check` checks formatting without changing files; `make lint` runs
+only lint; `make check` runs both checks.
 Set `GOLANGCI_LINT` to use a binary outside PATH; the entry point checks its version.
-CI runs the same command. It checks the root, memory, NATS, Kafka and examples
+It checks the root, memory, NATS, Kafka and examples
 modules, including tests, first with default tags and then with `integration`.
 Lint analyzes integration code without running it or starting brokers.
 The baseline checks errors, vet diagnostics, ineffective assignments, static

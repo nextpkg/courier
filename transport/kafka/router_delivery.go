@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/nextpkg/courier"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"net/http"
 	"time"
+
+	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 func (r *replyRouter) openInbox(parent context.Context, session string, receive func([]byte)) (courier.Inbox, error) {

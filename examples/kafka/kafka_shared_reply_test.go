@@ -5,15 +5,16 @@ package kafka_test
 import (
 	"context"
 	"fmt"
-	"github.com/nextpkg/courier/examples/internal/kafkatest"
-	"github.com/nextpkg/courier/internal/testcheck"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/nextpkg/courier"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/internal/testcheck"
 )
 
 func TestKafkaSharedReplyReader(t *testing.T) {

@@ -9,9 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nextpkg/courier"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/nextpkg/courier"
 )
 
 type groupSubscriptions struct{ subs []courier.Subscription }

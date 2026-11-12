@@ -2,13 +2,14 @@ package main
 
 import (
 	"bytes"
-	"github.com/stretchr/testify/require"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestGeneratedParameterNamesCompile(t *testing.T) {

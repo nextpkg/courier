@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/stretchr/testify/require"
 )
 
 type unit struct{}

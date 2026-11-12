@@ -2,9 +2,10 @@ package kafka
 
 import (
 	"errors"
-	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestPublishCompletionLateCallbackIsolation(t *testing.T) {

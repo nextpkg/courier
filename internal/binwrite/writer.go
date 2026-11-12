@@ -3,6 +3,7 @@ package binwrite
 
 import (
 	"context"
+
 	"github.com/apache/thrift/lib/go/thrift"
 )
 

@@ -11,9 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nextpkg/courier"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/nextpkg/courier"
 )
 
 // loadDiagnostics observes SDK publication and handler timing without changing acknowledgements.

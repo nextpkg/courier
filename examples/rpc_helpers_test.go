@@ -3,15 +3,16 @@ package examples_test
 import (
 	"context"
 	"errors"
-	"github.com/nextpkg/courier/internal/testcheck"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/nextpkg/courier/internal/testcheck"
 	"github.com/nextpkg/courier/transport/memory"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGeneratedRPCEntryPoints(t *testing.T) {

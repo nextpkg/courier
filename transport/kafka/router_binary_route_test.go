@@ -3,11 +3,13 @@ package kafka
 import (
 	"bytes"
 	"encoding/base64"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
-	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 func TestBinaryRouteValidation(t *testing.T) {

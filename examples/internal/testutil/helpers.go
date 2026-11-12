@@ -2,14 +2,16 @@ package testutil
 
 import (
 	"context"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
 	"github.com/nextpkg/courier/internal/testcheck"
-	"github.com/stretchr/testify/require"
-	"sync"
-	"testing"
-	"time"
 )
 
 func Client(t *testing.T, tr courier.Transport) *courier.Client {

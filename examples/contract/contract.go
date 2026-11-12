@@ -9,10 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
-	"github.com/stretchr/testify/require"
 )
 
 // Factory supplies independent endpoints sharing one broker namespace. Cleanup

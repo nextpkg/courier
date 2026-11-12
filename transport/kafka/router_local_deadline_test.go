@@ -3,11 +3,13 @@ package kafka
 import (
 	"context"
 	"errors"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
-	"github.com/stretchr/testify/require"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 func TestLocalForwardDeadlineAndCancellation(t *testing.T) {

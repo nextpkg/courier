@@ -15,11 +15,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nextpkg/courier"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl"
+
+	"github.com/nextpkg/courier"
 )
 
 // Options configures Kafka routing, per-transport limits, and SDK connections.

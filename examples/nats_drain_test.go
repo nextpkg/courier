@@ -6,14 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nextpkg/courier/examples/internal/testutil"
-	"github.com/nextpkg/courier/internal/testcheck"
 	"testing"
 	"time"
 
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 )
 
 type drainOrders struct {

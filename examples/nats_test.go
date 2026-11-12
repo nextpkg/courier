@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"github.com/nextpkg/courier/internal/testcheck"
 	"io"
 	"os"
 	"os/exec"
@@ -19,12 +18,14 @@ import (
 	"time"
 
 	sdk "github.com/nats-io/nats.go"
+	"github.com/stretchr/testify/require"
+
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/contract"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/nextpkg/courier/internal/testcheck"
 	transport "github.com/nextpkg/courier/transport/nats"
-	"github.com/stretchr/testify/require"
 )
 
 func natsURL(t *testing.T) string {

@@ -5,9 +5,10 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"testing"
+
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func framedBinaryProtocol(fields ...[]byte) *thrift.TBinaryProtocol {

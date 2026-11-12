@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nextpkg/courier"
-	"github.com/nextpkg/courier/internal/testcheck"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/internal/testcheck"
 )
 
 func frame(t *testing.T, route courier.Route) []byte {
