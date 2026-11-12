@@ -82,7 +82,7 @@ result, err := client.Get(ctx, "order-42", 0)
 ## Lint
 
 Install [golangci-lint v2.15.0](https://github.com/golangci/golangci-lint/releases/tag/v2.15.0)
-(built with Go 1.27 or newer), then run `./scripts/lint.sh` from the checkout.
+(built with Go 1.27 or newer), then run `make lint` from the checkout.
 Set `GOLANGCI_LINT` to use a binary outside PATH; the entry point checks its version.
 CI runs the same command. It checks the root, memory, NATS, Kafka and examples
 modules, including tests, first with default tags and then with `integration`.
