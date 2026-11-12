@@ -3,9 +3,11 @@ package kafka
 import (
 	"bytes"
 	"encoding/binary"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 func TestRouteFieldOrderAndOwnership(t *testing.T) {

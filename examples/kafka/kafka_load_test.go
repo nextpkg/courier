@@ -7,9 +7,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/nextpkg/courier/examples/internal/kafkatest"
-	"github.com/nextpkg/courier/internal/testcheck"
-	kafka "github.com/nextpkg/courier/transport/kafka"
 	"os"
 	"runtime"
 	runtimeMetrics "runtime/metrics"
@@ -21,11 +18,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/internal/testcheck"
+	kafka "github.com/nextpkg/courier/transport/kafka"
 )
 
 var loadSharedClient = flag.Bool("kafka-load-shared-client", false, "share one transport across load clients")

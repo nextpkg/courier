@@ -7,8 +7,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/nextpkg/courier/examples/internal/kafkatest"
-	"github.com/nextpkg/courier/examples/internal/testutil"
 	"io"
 	"net"
 	"sync"
@@ -16,10 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nextpkg/courier/examples/gen/demo"
-	"github.com/nextpkg/courier/examples/handlers"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kmsg"
+
+	"github.com/nextpkg/courier/examples/gen/demo"
+	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/examples/internal/testutil"
 )
 
 // leaderErrorProxy forwards real Kafka traffic but replaces one successful

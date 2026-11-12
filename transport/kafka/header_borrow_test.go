@@ -2,9 +2,10 @@ package kafka
 
 import (
 	"bytes"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"runtime"
 	"testing"
+
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 func TestBorrowedHeaderSelectionAndCapacity(t *testing.T) {

@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/nextpkg/courier"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+
+	"github.com/nextpkg/courier"
 )
 
 // replyReader is shared by all sessions on one transport and reply partition.

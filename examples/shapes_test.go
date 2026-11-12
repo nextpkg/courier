@@ -4,17 +4,19 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/gen/shapes"
 	"github.com/nextpkg/courier/examples/handlers"
 	"github.com/nextpkg/courier/internal/testcheck"
 	"github.com/nextpkg/courier/transport/memory"
-	"github.com/stretchr/testify/require"
-	"reflect"
-	"strings"
-	"testing"
-	"time"
 )
 
 type shapeHandler struct{}

@@ -3,6 +3,7 @@ package binread
 
 import (
 	"encoding/binary"
+
 	"github.com/apache/thrift/lib/go/thrift"
 )
 

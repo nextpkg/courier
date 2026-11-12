@@ -4,10 +4,11 @@ package brokeradmin
 import (
 	"context"
 	"fmt"
+	"sort"
+
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
-	"sort"
 )
 
 func Create(ctx context.Context, c *kgo.Client, topics map[string]int32) error {

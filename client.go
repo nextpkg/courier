@@ -238,6 +238,7 @@ func (c *Client) receive(data []byte) {
 	}
 	c.receiveEnvelope(e, len(data))
 }
+
 // Parsed delivery avoids another envelope decode. Correlation and size checks
 // still apply before completing a pending call.
 func (c *Client) receiveEnvelope(e Envelope, frameBytes int) {

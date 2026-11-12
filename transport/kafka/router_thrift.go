@@ -5,14 +5,16 @@ package kafka
 import (
 	"context"
 	"fmt"
-	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/nextpkg/courier/internal/reuse"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/apache/thrift/lib/go/thrift"
+
+	"github.com/nextpkg/courier/internal/reuse"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 // Argument IDs are defined by the Forward/ForwardBatch methods. Thrift uses

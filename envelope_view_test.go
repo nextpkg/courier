@@ -3,9 +3,10 @@ package courier
 import (
 	"bytes"
 	"encoding/binary"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func replyViewFixture(t testing.TB, rpcerr *RPCError) []byte {

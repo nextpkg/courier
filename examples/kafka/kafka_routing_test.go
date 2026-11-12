@@ -6,19 +6,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nextpkg/courier/examples/internal/kafkatest"
-	"github.com/nextpkg/courier/examples/internal/testutil"
-	"github.com/nextpkg/courier/internal/testcheck"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/brokeradmin"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
-	"github.com/stretchr/testify/require"
-	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 )
 
 func TestKafkaMethodEvolutionAndFixedTopicCount(t *testing.T) {

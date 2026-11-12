@@ -1,10 +1,11 @@
 package kafka
 
-import "github.com/nextpkg/courier/internal/reuse"
+import (
+	"context"
 
-import "github.com/nextpkg/courier/transport/kafka/internal/wire"
-
-import "context"
+	"github.com/nextpkg/courier/internal/reuse"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
+)
 
 const maxCachedForwardItems = 1024
 

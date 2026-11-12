@@ -6,6 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"runtime"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/brokeradmin"
 	"github.com/nextpkg/courier/examples/gen/demo"
@@ -13,12 +21,6 @@ import (
 	"github.com/nextpkg/courier/examples/internal/kafkatest"
 	"github.com/nextpkg/courier/examples/internal/testutil"
 	"github.com/nextpkg/courier/internal/testcheck"
-	"github.com/stretchr/testify/require"
-	"net"
-	"runtime"
-	"sync"
-	"testing"
-	"time"
 )
 
 // cutDialer cuts real TCP connections; it never fabricates Kafka responses.

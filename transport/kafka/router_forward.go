@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 // forwardRemote makes one attempt. Network failures produce status zero so the

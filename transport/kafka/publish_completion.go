@@ -1,9 +1,11 @@
 package kafka
 
 import (
-	"github.com/nextpkg/courier/internal/reuse"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"sync/atomic"
+
+	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/nextpkg/courier/internal/reuse"
 )
 
 const maxCachedPublishCompletions = 1024

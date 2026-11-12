@@ -7,10 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nextpkg/courier"
-	"github.com/nextpkg/courier/examples/internal/kafkatest"
-	"github.com/nextpkg/courier/examples/internal/testutil"
-	"github.com/nextpkg/courier/internal/testcheck"
 	"io"
 	"os"
 	"os/exec"
@@ -21,10 +17,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/examples/internal/testutil"
+	"github.com/nextpkg/courier/internal/testcheck"
 	transport "github.com/nextpkg/courier/transport/kafka"
-	"github.com/stretchr/testify/require"
 )
 
 // haOrders records an observable side effect before returning a response.

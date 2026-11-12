@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+
 	"github.com/apache/thrift/lib/go/thrift"
+
 	"github.com/nextpkg/courier/internal/binread"
 	"github.com/nextpkg/courier/internal/binwrite"
 )

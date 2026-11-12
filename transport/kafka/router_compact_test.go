@@ -3,12 +3,14 @@ package kafka
 import (
 	"bytes"
 	"context"
-	"github.com/nextpkg/courier"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
-	"github.com/stretchr/testify/require"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 func TestCompactReplyValidationAndDedupOwnership(t *testing.T) {

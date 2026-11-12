@@ -6,12 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	sdk "github.com/nats-io/nats.go"
-	"github.com/nextpkg/courier"
-	"github.com/nextpkg/courier/examples/gen/demo"
-	"github.com/nextpkg/courier/examples/handlers"
-	transport "github.com/nextpkg/courier/transport/nats"
-	"github.com/stretchr/testify/require"
 	"net"
 	"os"
 	"os/exec"
@@ -19,6 +13,14 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	sdk "github.com/nats-io/nats.go"
+	"github.com/stretchr/testify/require"
+
+	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/examples/gen/demo"
+	"github.com/nextpkg/courier/examples/handlers"
+	transport "github.com/nextpkg/courier/transport/nats"
 )
 
 func TestNATSDisconnectReconnect(t *testing.T) {

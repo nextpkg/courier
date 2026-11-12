@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/nextpkg/courier/internal/binwrite"
 	"io"
+
+	"github.com/apache/thrift/lib/go/thrift"
+
+	"github.com/nextpkg/courier/internal/binwrite"
 )
 
 // readFramedBinary allocates once after checking the declared field length

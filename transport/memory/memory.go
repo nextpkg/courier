@@ -7,10 +7,11 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/nextpkg/courier"
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
+
+	"github.com/nextpkg/courier"
 )
 
 type Options struct{ QueueSize, PublishWorkers, HandlerWorkers, MaxFrameBytes int }

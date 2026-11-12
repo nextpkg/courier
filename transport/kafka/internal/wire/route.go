@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sync"
+
 	"github.com/apache/thrift/lib/go/thrift"
+
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/internal/binread"
 	"github.com/nextpkg/courier/internal/binwrite"
-	"sync"
 )
 
 var RoutePrefix = []byte{0x80, 'R', 'T', 1}

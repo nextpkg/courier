@@ -2,8 +2,9 @@ package kafka
 
 import (
 	"context"
-	"github.com/apache/thrift/lib/go/thrift"
 	"testing"
+
+	"github.com/apache/thrift/lib/go/thrift"
 )
 
 func BenchmarkForwardFields(b *testing.B) {

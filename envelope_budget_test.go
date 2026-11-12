@@ -2,10 +2,11 @@ package courier
 
 import (
 	"errors"
-	"github.com/stretchr/testify/require"
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestErrorBudgetFastPathMatchesExactBoundary(t *testing.T) {

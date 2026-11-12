@@ -5,14 +5,16 @@ package kafkatest
 import (
 	"context"
 	"fmt"
-	"github.com/nextpkg/courier/examples/brokeradmin"
-	transport "github.com/nextpkg/courier/transport/kafka"
-	"github.com/stretchr/testify/require"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/nextpkg/courier/examples/brokeradmin"
+	transport "github.com/nextpkg/courier/transport/kafka"
 )
 
 func Brokers(t *testing.T) []string {

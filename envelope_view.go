@@ -3,6 +3,7 @@ package courier
 import (
 	"bytes"
 	"fmt"
+
 	"github.com/nextpkg/courier/internal/binread"
 )
 

@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 	"net/url"
+
+	"github.com/apache/thrift/lib/go/thrift"
+
+	"github.com/nextpkg/courier/transport/kafka/internal/wire"
 )
 
 const maxRouteIdentities = 64

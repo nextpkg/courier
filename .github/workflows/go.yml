@@ -37,5 +37,5 @@ jobs:
           curl -sSfL https://golangci-lint.run/install.sh -o /tmp/install-golangci-lint.sh
           sh /tmp/install-golangci-lint.sh -b "$HOME/.local/bin" v2.15.0
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Lint all modules and integration tests
-        run: ./scripts/lint.sh
+      - name: Check formatting, imports and lint all modules
+        run: make check

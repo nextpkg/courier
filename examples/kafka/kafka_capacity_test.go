@@ -6,6 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
+	"sort"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
 	"github.com/nextpkg/courier"
 	"github.com/nextpkg/courier/examples/gen/demo"
 	"github.com/nextpkg/courier/examples/handlers"
@@ -13,12 +21,6 @@ import (
 	"github.com/nextpkg/courier/examples/internal/testutil"
 	"github.com/nextpkg/courier/internal/testcheck"
 	transport "github.com/nextpkg/courier/transport/kafka"
-	"github.com/stretchr/testify/require"
-	"runtime"
-	"sort"
-	"sync"
-	"testing"
-	"time"
 )
 
 func TestKafkaSharedReplyReadAmplification(t *testing.T) {

@@ -3,13 +3,14 @@ package kafka
 import (
 	"context"
 	"errors"
-	"github.com/nextpkg/courier"
 	"strings"
+	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"testing"
-	"time"
+
+	"github.com/nextpkg/courier"
 )
 
 func TestUnreplyableRecordCanBeCommitted(t *testing.T) {

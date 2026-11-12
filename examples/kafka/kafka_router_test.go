@@ -5,17 +5,19 @@ package kafka_test
 import (
 	"context"
 	"fmt"
-	"github.com/nextpkg/courier"
-	"github.com/nextpkg/courier/examples/internal/kafkatest"
-	"github.com/nextpkg/courier/internal/testcheck"
-	kafka "github.com/nextpkg/courier/transport/kafka"
-	"github.com/stretchr/testify/require"
-	"github.com/twmb/franz-go/pkg/kmsg"
 	"net/url"
 	"os"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kmsg"
+
+	"github.com/nextpkg/courier"
+	"github.com/nextpkg/courier/examples/internal/kafkatest"
+	"github.com/nextpkg/courier/internal/testcheck"
+	kafka "github.com/nextpkg/courier/transport/kafka"
 )
 
 func routerOptions(o kafka.Options) kafka.Options {
